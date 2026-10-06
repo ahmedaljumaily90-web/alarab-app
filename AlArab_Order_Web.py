@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Al-Arab Order Web App (النسخة الاحترافية: كشف التكرار بالحالة والتحذير + تعديل الصور المنفردة)
+Al-Arab Order Web App (النسخة الاحترافية النهائية: كشف التكرار بالحالة والتحذير + تعديل الصور المنفردة)
 """
 import streamlit as st
 import pandas as pd
@@ -79,7 +79,7 @@ SYSTEM_PROMPT = r"""
 """
 
 def normalize_num(s):
-    trans = str.maketrans("٠١ي٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
+    trans = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
     return str(s).translate(trans)
 
 def clean_phone_number(ph):
@@ -146,7 +146,6 @@ def call_gemini_web(api_key, model, uploaded_file):
     out["_filename"] = uploaded_file.name
     return out
 
-# رفع مجموعة صور دفعة واحدة
 uploaded_files = st.file_uploader("📂 اختر أو التقط صور الطلبات (دفعة واحدة)", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True, key="bulk_upload")
 
 if uploaded_files:
@@ -180,7 +179,6 @@ if uploaded_files:
             status_text.text(f"اكتملت المعالجة! تمت إضافة {new_added_count} طلب جديد.")
             st.session_state["extracted_rows"] = extracted_rows
 
-# ميزة إعادة معالجة صورة مفردة عند وجود خطأ
 with st.expander("🔄 إعادة معالجة صورة واحدة فقط (في حال وجود خطأ في طلب محدد)"):
     single_file = st.file_uploader("اختر الصورة التي بها خطأ فقط:", type=["png", "jpg", "jpeg", "webp"], key="single_upload")
     if single_file and st.button("إعادة قراءة هذه الصورة فقط"):
@@ -191,7 +189,7 @@ with st.expander("🔄 إعادة معالجة صورة واحدة فقط (في 
                 single_row = call_gemini_web(api_key_input, model_choice, single_file)
                 if "extracted_rows" not in st.session_state:
                     st.session_state["extracted_rows"] = []
-                st.session_state["extracted_rows"] = [r for r in st.session_state["extracted_rows"] if r.get("_filename"] != single_file.name]
+                st.session_state["extracted_rows"] = [r for r in st.session_state["extracted_rows"] if r.get("_filename") != single_file.name]
                 st.session_state["extracted_rows"].append(single_row)
                 st.success(f"تمت إعادة قراءة وتحديث بيانات الصورة ({single_file.name}) بنجاح!")
             except Exception as ex:
@@ -200,56 +198,6 @@ with st.expander("🔄 إعادة معالجة صورة واحدة فقط (في 
 if "extracted_rows" in st.session_state and st.session_state["extracted_rows"]:
     st.subheader("📋 جدول الطلبات (كشف التكرار والتعديل المباشر):")
     
-    # تحديث كشف التكرار في عمود الحالة تلقائياً
     df_check = pd.DataFrame(st.session_state["extracted_rows"])
     if not df_check.empty and "رقم الهاتف الاساسي" in df_check.columns:
-        # حساب التكرارات للأرقام الموجودة
-        phone_counts = df_check["رقم الهاتف الاساسي"].value_counts()
-        for idx, row in df_check.iterrows():
-            ph = row.get("رقم الهاتف الاساسي", "")
-            current_status = row.get("_phone_status", "سليم")
-            if ph and phone_counts.get(ph, 0) > 1 and "رقم مفقود" not in current_status and "خطأ" not in current_status:
-                df_check.loc[idx, "_phone_status"] = "⚠ رقم هاتف مكرر"
-
-    st.info("💡 الجدول يوضح حالة الأرقام والتكرارات في عمود `_phone_status`. يمكنك تعديل أي خانة أو حذف الصفوف المكررة مباشرة.")
-    
-    edited_df = st.data_editor(df_check, num_rows="dynamic", use_container_width=True)
-    st.session_state["extracted_rows"] = edited_df.to_dict(orient="records")
-    
-    EXPORT_FIELDS = [
-        "اسم الزبون", "رقم الهاتف الاساسي", "رقم الهاتف الثانوي", "المحافظة",
-        "المنطقة", "نوع البضاعه", "عدد القطع", "السعر مع التوصيل", "حجم الطلب",
-        "الملاحظات", "نوع الطلب"
-    ]
-    
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Sheet1"
-    ws.append(EXPORT_FIELDS)
-    
-    for r in st.session_state["extracted_rows"]:
-        ws.append([
-            r.get("اسم الزبون", ""),
-            r.get("رقم الهاتف الاساسي", ""),
-            r.get("رقم الهاتف الثانوي", ""),
-            r.get("المحافظة", ""),
-            r.get("المنطقة", ""),
-            r.get("نوع البضاعه", ""),
-            r.get("عدد القطع", ""),
-            r.get("السعر مع التوصيل", ""),
-            "عادي",
-            r.get("الملاحظات", ""),
-            r.get("نوع الطلب", "طلب جديد")
-        ])
-    
-    output = io.BytesIO()
-    wb.save(output)
-    output.seek(0)
-    
-    st.download_button(
-        label="📊 تحميل ملف الأكسل جاهز لشركة التوصيل",
-        data=output,
-        file_name="الطلبات_جاهزة_للتوصيل.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        type="primary"
-    )
+        phone_counts = df_
