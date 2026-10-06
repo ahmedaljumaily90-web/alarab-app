@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Al-Arab Order Web App (النسخة النهائية والمصححة 100%)
+Al-Arab Order Web App (النسخة النهائية الكاملة مع معالجة الصورة الفردية)
 """
 import streamlit as st
 import pandas as pd
@@ -14,7 +14,7 @@ st.set_page_config(page_title="العراب - استخراج الطلبات", pa
 st.markdown("""
     <div style='background-color: #ffd400; padding: 15px; border-radius: 10px; text-align: center;'>
         <h1 style='color: #000; margin:0;'>العراب - نظام التوصيل الذكي (نسخة الهاتف)</h1>
-        <p style='color: #333; margin:5px 0 0 0;'>كشف التكرار، حذف المكرر بالكامل، والتعديل المباشر</p>
+        <p style='color: #333; margin:5px 0 0 0;'>كشف وحذف التكرار، التعديل المباشر، ومعالجة الصور المنفردة</p>
     </div>
     <br>
 """, unsafe_allow_html=True)
@@ -79,7 +79,7 @@ SYSTEM_PROMPT = r"""
 """
 
 def normalize_num(s):
-    trans = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
+    trans = str.maketrans("٠١ي٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
     return str(s).translate(trans)
 
 def clean_phone_number(ph):
@@ -138,6 +138,7 @@ def call_gemini_web(api_key, model, uploaded_file):
     
     raw_ph = data.get("رقم الهاتف الاساسي", "")
     cleaned_ph, p_status = clean_phone_number(raw_ph)
+    out["رقم الهاتف الأساسي"] = cleaned_ph
     out["رقم الهاتف الاساسي"] = cleaned_ph
     out["_phone_status"] = p_status
     out["رقم الهاتف الثانوي"] = normalize_num(data.get("رقم الهاتف الثانوي", ""))
@@ -146,6 +147,7 @@ def call_gemini_web(api_key, model, uploaded_file):
     out["_filename"] = uploaded_file.name
     return out
 
+# رفع مجموعة صور دفعة واحدة
 uploaded_files = st.file_uploader("📂 اختر أو التقط صور الطلبات (دفعة واحدة)", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True, key="bulk_upload")
 
 if uploaded_files:
@@ -180,9 +182,10 @@ if uploaded_files:
             status_text.text(f"اكتملت المعالجة! تمت إضافة {new_added_count} طلب جديد.")
             st.session_state["extracted_rows"] = extracted_rows
 
-with st.expander("🔄 إعادة معالجة صورة واحدة فقط (في حال وجود خطأ في طلب محدد)"):
+# قسم إعادة معالجة صورة واحدة فقط عند وجود خطأ
+with st.expander("🔄 إعادة معالجة صورة واحدة فقط (عند وجود خطأ في طلب محدد)"):
     single_file = st.file_uploader("اختر الصورة التي بها خطأ فقط:", type=["png", "jpg", "jpeg", "webp"], key="single_upload")
-    if single_file and st.button("إعادة قراءة هذه الصورة فقط"):
+    if single_file and st.button("إعادة قراءة وتحديث هذه الصورة فقط"):
         if not api_key_input:
             st.error("أدخل مفتاح Gemini API أولاً.")
         else:
@@ -190,9 +193,10 @@ with st.expander("🔄 إعادة معالجة صورة واحدة فقط (في 
                 single_row = call_gemini_web(api_key_input, model_choice, single_file)
                 if "extracted_rows" not in st.session_state:
                     st.session_state["extracted_rows"] = []
+                # إزالة النسخة القديمة لنفس الصورة إن وجدت وإضافة الجديدة
                 st.session_state["extracted_rows"] = [r for r in st.session_state["extracted_rows"] if r.get("_filename") != single_file.name]
                 st.session_state["extracted_rows"].append(single_row)
-                st.success(f"تمت إعادة قراءة وتحديث بيانات الصورة ({single_file.name}) بنجاح!")
+                st.success(f"تمت إعادة قراءة وتحديث بيانات الصورة ({single_file.name}) بنجاح دون التأثير على باقي الصور!")
             except Exception as ex:
                 st.error(f"حدث خطأ أثناء قراءة الصورة: {ex}")
 
