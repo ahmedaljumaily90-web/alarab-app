@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Al-Arab Order Web App (النسخة النهائية الكاملة مع معالجة الصورة الفردية)
+Al-Arab Order Web App (النسخة الذكية والنهائية: إعادة المعالجة من الجدول مباشرة)
 """
 import streamlit as st
 import pandas as pd
@@ -14,7 +14,7 @@ st.set_page_config(page_title="العراب - استخراج الطلبات", pa
 st.markdown("""
     <div style='background-color: #ffd400; padding: 15px; border-radius: 10px; text-align: center;'>
         <h1 style='color: #000; margin:0;'>العراب - نظام التوصيل الذكي (نسخة الهاتف)</h1>
-        <p style='color: #333; margin:5px 0 0 0;'>كشف وحذف التكرار، التعديل المباشر، ومعالجة الصور المنفردة</p>
+        <p style='color: #333; margin:5px 0 0 0;'>كشف التكرار، التعديل المباشر، ومعالجة الأخطاء من الجدول مباشرة</p>
     </div>
     <br>
 """, unsafe_allow_html=True)
@@ -104,16 +104,15 @@ def clean_price_format(val):
     if 0 < num < 100: num = num * 1000
     return str(num)
 
-def call_gemini_web(api_key, model, uploaded_file):
+def call_gemini_with_bytes(api_key, model, img_bytes, mime_type, filename):
     endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-    bytes_data = uploaded_file.getvalue()
-    b64 = base64.b64encode(bytes_data).decode("ascii")
+    b64 = base64.b64encode(img_bytes).decode("ascii")
     
     payload = {
         "contents": [{
             "parts": [
                 {"text": SYSTEM_PROMPT},
-                {"inline_data": {"mime_type": uploaded_file.type, "data": b64}}
+                {"inline_data": {"mime_type": mime_type, "data": b64}}
             ]
         }],
         "generationConfig": {"temperature": 0, "responseMimeType": "application/json"}
@@ -138,16 +137,18 @@ def call_gemini_web(api_key, model, uploaded_file):
     
     raw_ph = data.get("رقم الهاتف الاساسي", "")
     cleaned_ph, p_status = clean_phone_number(raw_ph)
-    out["رقم الهاتف الأساسي"] = cleaned_ph
     out["رقم الهاتف الاساسي"] = cleaned_ph
     out["_phone_status"] = p_status
     out["رقم الهاتف الثانوي"] = normalize_num(data.get("رقم الهاتف الثانوي", ""))
     out["عدد القطع"] = normalize_num(data.get("عدد القطع", ""))
     out["السعر مع التوصيل"] = clean_price_format(data.get("السعر مع التوصيل", ""))
-    out["_filename"] = uploaded_file.name
+    out["_filename"] = filename
     return out
 
-# رفع مجموعة صور دفعة واحدة
+# تخزين الصور المؤقتة في الذاكرة لكي يمكن إعادة قراءتها مباشرة
+if "image_cache" not in st.session_state:
+    st.session_state["image_cache"] = {}
+
 uploaded_files = st.file_uploader("📂 اختر أو التقط صور الطلبات (دفعة واحدة)", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True, key="bulk_upload")
 
 if uploaded_files:
@@ -164,10 +165,17 @@ if uploaded_files:
             new_added_count = 0
             for i, file in enumerate(uploaded_files):
                 if file:
+                    # حفظ بايتات الصورة في الذاكرة للاستخدام اللاحق
+                    img_bytes = file.getvalue()
+                    st.session_state["image_cache"][file.name] = {
+                        "bytes": img_bytes,
+                        "type": file.type
+                    }
+                    
                     if file.name not in existing_files:
                         status_text.text(f"جارٍ معالجة الصورة: {file.name}")
                         try:
-                            row = call_gemini_web(api_key_input, model_choice, file)
+                            row = call_gemini_with_bytes(api_key_input, model_choice, img_bytes, file.type, file.name)
                             extracted_rows.append(row)
                             new_added_count += 1
                         except Exception as e:
@@ -182,27 +190,33 @@ if uploaded_files:
             status_text.text(f"اكتملت المعالجة! تمت إضافة {new_added_count} طلب جديد.")
             st.session_state["extracted_rows"] = extracted_rows
 
-# قسم إعادة معالجة صورة واحدة فقط عند وجود خطأ
-with st.expander("🔄 إعادة معالجة صورة واحدة فقط (عند وجود خطأ في طلب محدد)"):
-    single_file = st.file_uploader("اختر الصورة التي بها خطأ فقط:", type=["png", "jpg", "jpeg", "webp"], key="single_upload")
-    if single_file and st.button("إعادة قراءة وتحديث هذه الصورة فقط"):
-        if not api_key_input:
-            st.error("أدخل مفتاح Gemini API أولاً.")
-        else:
-            try:
-                single_row = call_gemini_web(api_key_input, model_choice, single_file)
-                if "extracted_rows" not in st.session_state:
-                    st.session_state["extracted_rows"] = []
-                # إزالة النسخة القديمة لنفس الصورة إن وجدت وإضافة الجديدة
-                st.session_state["extracted_rows"] = [r for r in st.session_state["extracted_rows"] if r.get("_filename") != single_file.name]
-                st.session_state["extracted_rows"].append(single_row)
-                st.success(f"تمت إعادة قراءة وتحديث بيانات الصورة ({single_file.name}) بنجاح دون التأثير على باقي الصور!")
-            except Exception as ex:
-                st.error(f"حدث خطأ أثناء قراءة الصورة: {ex}")
-
 if "extracted_rows" in st.session_state and st.session_state["extracted_rows"]:
-    st.subheader("📋 جدول الطلبات (كشف التكرار والتعديل المباشر):")
+    st.subheader("📋 جدول الطلبات (إعادة المعالجة الفورية والتعديل):")
     
+    # قسم مخصص لإعادة قراءة أي صورة فيها خطأ مباشرة بضغطة زر بناءً على اسمها المخزن
+    failed_rows = [r.get("_filename") for r in st.session_state["extracted_rows"] if "خطأ" in r.get("_phone_status", "") or r.get("اسم الزبون") == "خطأ في القراءة"]
+    
+    if failed_rows:
+        st.warning(I := f"⚠ يوجد {len(failed_rows)} طلب فيه خطأ في القراءة. يمكنك إعادة قراءته فوراً بضغطة زر:")
+        selected_retry_file = st.selectbox("اختر ملف الصورة الذي تريد إعادة قراءته:", failed_rows, key="retry_select")
+        if st.button("🔄 إعادة قراءة هذه الصورة فوراً من الذاكرة"):
+            if not api_key_input:
+                st.error("أدخل مفتاح Gemini API أولاً.")
+            else:
+                cache_item = st.session_state["image_cache"].get(selected_retry_file)
+                if cache_item:
+                    try:
+                        with st.spinner("جارٍ إعادة تحليل الصورة..."):
+                            new_row = call_gemini_with_bytes(api_key_input, model_choice, cache_item["bytes"], cache_item["type"], selected_retry_file)
+                            # استبدال الصف القديم بالجديد
+                            st.session_state["extracted_rows"] = [new_row if r.get("_filename") == selected_retry_file else r for r in st.session_state["extracted_rows"]]
+                            st.success(f"تمت إعادة قراءة الصورة ({selected_retry_file}) بنجاح!")
+                            st.rerun()
+                    except Exception as err:
+                        st.error(f"فشلت إعادة المعالجة: {err}")
+                else:
+                    st.error("الصورة غير موجودة في الذاكرة المؤقتة، يرجى إعادة رفعها إذا لزم الأمر.")
+
     df_check = pd.DataFrame(st.session_state["extracted_rows"])
     if not df_check.empty and "رقم الهاتف الاساسي" in df_check.columns:
         phone_counts = df_check["رقم الهاتف الاساسي"].value_counts()
