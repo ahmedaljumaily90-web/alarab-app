@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Al-Arab Order Web App (النسخة الذكية: كشف وحذف التكرار + إعادة معالجة صورة فردية)
+Al-Arab Order Web App (النسخة الاحترافية: كشف التكرار بالحالة والتحذير + تعديل الصور المنفردة)
 """
 import streamlit as st
 import pandas as pd
@@ -14,7 +14,7 @@ st.set_page_config(page_title="العراب - استخراج الطلبات", pa
 st.markdown("""
     <div style='background-color: #ffd400; padding: 15px; border-radius: 10px; text-align: center;'>
         <h1 style='color: #000; margin:0;'>العراب - نظام التوصيل الذكي (نسخة الهاتف)</h1>
-        <p style='color: #333; margin:5px 0 0 0;'>كشف وحذف التكرار، التعديل المباشر، وإعادة معالجة الصور الفردية</p>
+        <p style='color: #333; margin:5px 0 0 0;'>كشف التكرار بالجدول، التعديل المباشر، ومعالجة الصور المنفردة</p>
     </div>
     <br>
 """, unsafe_allow_html=True)
@@ -41,7 +41,7 @@ with st.sidebar:
 FIELDS = [
     "اسم الزبون", "رقم الهاتف الاساسي", "رقم الهاتف الثانوي", "المحافظة",
     "المنطقة", "نوع البضاعه", "عدد القطع", "السعر مع التوصيل", "حجم الطلب",
-    "الملاحظات", "نوع الطلب", "_filename"
+    "الملاحظات", "نوع الطلب", "_phone_status", "_filename"
 ]
 
 SYSTEM_PROMPT = r"""
@@ -79,7 +79,7 @@ SYSTEM_PROMPT = r"""
 """
 
 def normalize_num(s):
-    trans = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
+    trans = str.maketrans("٠١ي٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
     return str(s).translate(trans)
 
 def clean_phone_number(ph):
@@ -131,7 +131,7 @@ def call_gemini_web(api_key, model, uploaded_file):
     text = re.sub(r"\s*```$", "", text)
     data = json.loads(text)
     
-    out = {f: str(data.get(f, "") or "") for f in FIELDS if f != "_filename"}
+    out = {f: str(data.get(f, "") or "") for f in FIELDS if f not in ["_filename", "_phone_status"]}
     out["اسم الزبون"] = out["اسم الزبون"] or "غير متوفر"
     out["حجم الطلب"] = "عادي"
     out["نوع الطلب"] = out["نوع الطلب"] or "طلب جديد"
@@ -173,6 +173,7 @@ if uploaded_files:
                         err_row["اسم الزبون"] = "خطأ في القراءة"
                         err_row["الملاحظات"] = str(e)
                         err_row["_filename"] = file.name
+                        err_row["_phone_status"] = "خطأ"
                         extracted_rows.append(err_row)
                 progress_bar.progress((i + 1) / len(uploaded_files))
                 
@@ -190,28 +191,27 @@ with st.expander("🔄 إعادة معالجة صورة واحدة فقط (في 
                 single_row = call_gemini_web(api_key_input, model_choice, single_file)
                 if "extracted_rows" not in st.session_state:
                     st.session_state["extracted_rows"] = []
-                # إذا كانت الصورة موجودة مسبقاً، استبدلها بالجديدة
-                st.session_state["extracted_rows"] = [r for r in st.session_state["extracted_rows"] if r.get("_filename") != single_file.name]
+                st.session_state["extracted_rows"] = [r for r in st.session_state["extracted_rows"] if r.get("_filename"] != single_file.name]
                 st.session_state["extracted_rows"].append(single_row)
                 st.success(f"تمت إعادة قراءة وتحديث بيانات الصورة ({single_file.name}) بنجاح!")
             except Exception as ex:
                 st.error(f"حدث خطأ أثناء قراءة الصورة: {ex}")
 
 if "extracted_rows" in st.session_state and st.session_state["extracted_rows"]:
-    st.subheader("📋 جدول الطلبات (قابل للتعديل وحشف التكرار):")
+    st.subheader("📋 جدول الطلبات (كشف التكرار والتعديل المباشر):")
     
-    # فحص التكرار بناءً على رقم الهاتف الأساسي
+    # تحديث كشف التكرار في عمود الحالة تلقائياً
     df_check = pd.DataFrame(st.session_state["extracted_rows"])
     if not df_check.empty and "رقم الهاتف الاساسي" in df_check.columns:
-        duplicates = df_check[df_check.duplicated(subset=["رقم الهاتف الاساسي"], keep=False) & (df_check["رقم الهاتف الاساسي"] != "")]
-        if not duplicates.empty:
-            st.warning(f"⚠ تنبيه: يوجد {len(duplicates)} طلب مكرر (بنفس رقم الهاتف الأساسي في الجدول أدناه).")
-            if st.button("🧹 حذف التكرارات تلقائياً (إبقاء أول طلب لكل رقم وحذف الباقي)", type="secondary"):
-                df_check = df_check.drop_duplicates(subset=["رقم الهاتف الاساسي"], keep="first")
-                st.session_state["extracted_rows"] = df_check.to_dict(orient="records")
-                st.rerun()
+        # حساب التكرارات للأرقام الموجودة
+        phone_counts = df_check["رقم الهاتف الاساسي"].value_counts()
+        for idx, row in df_check.iterrows():
+            ph = row.get("رقم الهاتف الاساسي", "")
+            current_status = row.get("_phone_status", "سليم")
+            if ph and phone_counts.get(ph, 0) > 1 and "رقم مفقود" not in current_status and "خطأ" not in current_status:
+                df_check.loc[idx, "_phone_status"] = "⚠ رقم هاتف مكرر"
 
-    st.info("💡 يمكنك النقر على أي خلية لتعديلها مباشرة، أو حذف أي صف غير مرغوب فيه.")
+    st.info("💡 الجدول يوضح حالة الأرقام والتكرارات في عمود `_phone_status`. يمكنك تعديل أي خانة أو حذف الصفوف المكررة مباشرة.")
     
     edited_df = st.data_editor(df_check, num_rows="dynamic", use_container_width=True)
     st.session_state["extracted_rows"] = edited_df.to_dict(orient="records")
