@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Al-Arab Order Web App (النسخة الاحترافية النهائية: كشف التكرار بالحالة والتحذير + تعديل الصور المنفردة)
+Al-Arab Order Web App (النسخة النهائية المصححة: كشف التكرار بالحالة والتحذير + تعديل الصور المنفردة)
 """
 import streamlit as st
 import pandas as pd
@@ -200,4 +200,52 @@ if "extracted_rows" in st.session_state and st.session_state["extracted_rows"]:
     
     df_check = pd.DataFrame(st.session_state["extracted_rows"])
     if not df_check.empty and "رقم الهاتف الاساسي" in df_check.columns:
-        phone_counts = df_
+        phone_counts = df_check["رقم الهاتف الاساسي"].value_counts()
+        for idx, row in df_check.iterrows():
+            ph = row.get("رقم الهاتف الاساسي", "")
+            current_status = row.get("_phone_status", "سليم")
+            if ph and phone_counts.get(ph, 0) > 1 and "رقم مفقود" not in current_status and "خطأ" not in current_status:
+                df_check.loc[idx, "_phone_status"] = "⚠ رقم هاتف مكرر"
+
+    st.info("💡 الجدول يوضح حالة الأرقام والتكرارات في عمود `_phone_status`. يمكنك تعديل أي خانة أو حذف الصفوف المكررة مباشرة.")
+    
+    edited_df = st.data_editor(df_check, num_rows="dynamic", use_container_width=True)
+    st.session_state["extracted_rows"] = edited_df.to_dict(orient="records")
+    
+    EXPORT_FIELDS = [
+        "اسم الزبون", "رقم الهاتف الاساسي", "رقم الهاتف الثانوي", "المحافظة",
+        "المنطقة", "نوع البضاعه", "عدد القطع", "السعر مع التوصيل", "حجم الطلب",
+        "الملاحظات", "نوع الطلب"
+    ]
+    
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Sheet1"
+    ws.append(EXPORT_FIELDS)
+    
+    for r in st.session_state["extracted_rows"]:
+        ws.append([
+            r.get("اسم الزبون", ""),
+            r.get("رقم الهاتف الاساسي", ""),
+            r.get("رقم الهاتف الثانوي", ""),
+            r.get("المحافظة", ""),
+            r.get("المنطقة", ""),
+            r.get("نوع البضاعه", ""),
+            r.get("عدد القطع", ""),
+            r.get("السعر مع التوصيل", ""),
+            "عادي",
+            r.get("الملاحظات", ""),
+            r.get("نوع الطلب", "طلب جديد")
+        ])
+    
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    st.download_button(
+        label="📊 تحميل ملف الأكسل جاهز لشركة التوصيل",
+        data=output,
+        file_name="الطلبات_جاهزة_للتوصيل.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        type="primary"
+    )
