@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Al-Arab Order Web App (نسخة الهاتف واللابتوب عبر المتصفح)
-تشغيل البرنامج عبر الويب باستخدام Streamlit
+Al-Arab Order Web App (النسخة النهائية المحدثة والمستقلة)
 """
 import streamlit as st
 import pandas as pd
@@ -20,12 +19,11 @@ st.markdown("""
     <br>
 """, unsafe_allow_html=True)
 
-# إعدادات مفتاح API والنموذج
 with st.sidebar:
     st.header("⚙ إعدادات الذكاء الاصطناعي")
     api_key_input = st.text_input("أدخل مفتاح Gemini API:", type="password", value=os.environ.get("GEMINI_API_KEY", ""))
     model_choice = st.selectbox("اختر النموذج:", ["gemini-3.5-flash-lite", "gemini-2.5-flash", "gemini-3.7-flash"], index=0)
-    st.info("💡 المفتاح الخاص بك آمن ولا يتم مشاركته.")
+    st.info("💡 المفتاح آمن ومخزن محلياً لديك.")
 
 FIELDS = [
     "اسم الزبون", "رقم الهاتف الاساسي", "رقم الهاتف الثانوي", "المحافظة",
@@ -68,7 +66,7 @@ SYSTEM_PROMPT = r"""
 """
 
 def normalize_num(s):
-    trans = str.maketrans("٠١ي٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
+    trans = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
     return str(s).translate(trans)
 
 def clean_phone_number(ph):
@@ -134,8 +132,7 @@ def call_gemini_web(api_key, model, uploaded_file):
     out["السعر مع التوصيل"] = clean_price_format(data.get("السعر مع التوصيل", ""))
     return out
 
-# رفع الصور من الموبايل أو اللابتوب
-uploaded_files = st.file_uploader("📂 اختر أو التقط صور الطلبات (يمكنك اختيار صور متعددة)", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True)
+uploaded_files = st.file_uploader("📂 اختر أو التقط صور الطلبات", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True)
 
 if uploaded_files:
     st.success(f"تمت إضافة {len(uploaded_files)} صورة بنجاح.")
@@ -169,11 +166,8 @@ if uploaded_files:
 if "extracted_rows" in st.session_state and st.session_state["extracted_rows"]:
     st.subheader("📋 جدول الطلبات المستخرجة:")
     df_view = pd.DataFrame(st.session_state["extracted_rows"])
-    
-    # عرض الجدول للمستخدم
     st.dataframe(df_view, use_container_width=True)
     
-    # زر تصدير أكسل بقالب الشركة
     wb = Workbook()
     ws = wb.active
     ws.title = "Sheet1"
