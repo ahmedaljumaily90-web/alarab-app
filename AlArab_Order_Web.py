@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Al-Arab Order Web App (النسخة النهائية المحدثة والمستقلة)
+Al-Arab Order Web App (النسخة النهائية مع تتبع الصور وإصلاح الأخطاء والتعديل)
 """
 import streamlit as st
 import pandas as pd
@@ -14,21 +14,34 @@ st.set_page_config(page_title="العراب - استخراج الطلبات", pa
 st.markdown("""
     <div style='background-color: #ffd400; padding: 15px; border-radius: 10px; text-align: center;'>
         <h1 style='color: #000; margin:0;'>العراب - نظام التوصيل الذكي (نسخة الهاتف)</h1>
-        <p style='color: #333; margin:5px 0 0 0;'>استخراج بيانات الزبائن من صور المحادثات وتصديرها بقالب شركة التوصيل</p>
+        <p style='color: #333; margin:5px 0 0 0;'>استخراج البيانات، تتبع الصور، والتعديل اليدوي الفوري</p>
     </div>
     <br>
 """, unsafe_allow_html=True)
 
+default_api_key = ""
+try:
+    if "GEMINI_API_KEY" in st.secrets:
+        default_api_key = st.secrets["GEMINI_API_KEY"]
+except Exception:
+    pass
+
+if not default_api_key:
+    default_api_key = os.environ.get("GEMINI_API_KEY", "")
+
 with st.sidebar:
     st.header("⚙ إعدادات الذكاء الاصطناعي")
-    api_key_input = st.text_input("أدخل مفتاح Gemini API:", type="password", value=os.environ.get("GEMINI_API_KEY", ""))
+    api_key_input = st.text_input("مفتاح Gemini API:", type="password", value=default_api_key)
     model_choice = st.selectbox("اختر النموذج:", ["gemini-3.5-flash-lite", "gemini-2.5-flash", "gemini-3.7-flash"], index=0)
-    st.info("💡 المفتاح آمن ومخزن محلياً لديك.")
+    if default_api_key:
+        st.success("✔ تم تحميل المفتاح المحفوظ تلقائياً.")
+    else:
+        st.info("💡 أدخل المفتاح مرة واحدة في قسم Secrets على Streamlit ليبقى محفوظاً دائماً.")
 
 FIELDS = [
     "اسم الزبون", "رقم الهاتف الاساسي", "رقم الهاتف الثانوي", "المحافظة",
     "المنطقة", "نوع البضاعه", "عدد القطع", "السعر مع التوصيل", "حجم الطلب",
-    "الملاحظات", "نوع الطلب"
+    "الملاحظات", "نوع الطلب", "_filename"
 ]
 
 SYSTEM_PROMPT = r"""
@@ -66,7 +79,7 @@ SYSTEM_PROMPT = r"""
 """
 
 def normalize_num(s):
-    trans = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
+    trans = str.maketrans("٠١ي٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
     return str(s).translate(trans)
 
 def clean_phone_number(ph):
@@ -118,7 +131,7 @@ def call_gemini_web(api_key, model, uploaded_file):
     text = re.sub(r"\s*```$", "", text)
     data = json.loads(text)
     
-    out = {f: str(data.get(f, "") or "") for f in FIELDS}
+    out = {f: str(data.get(f, "") or "") for f in FIELDS if f != "_filename"}
     out["اسم الزبون"] = out["اسم الزبون"] or "غير متوفر"
     out["حجم الطلب"] = "عادي"
     out["نوع الطلب"] = out["نوع الطلب"] or "طلب جديد"
@@ -130,6 +143,7 @@ def call_gemini_web(api_key, model, uploaded_file):
     out["رقم الهاتف الثانوي"] = normalize_num(data.get("رقم الهاتف الثانوي", ""))
     out["عدد القطع"] = normalize_num(data.get("عدد القطع", ""))
     out["السعر مع التوصيل"] = clean_price_format(data.get("السعر مع التوصيل", ""))
+    out["_filename"] = uploaded_file.name
     return out
 
 uploaded_files = st.file_uploader("📂 اختر أو التقط صور الطلبات", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True)
@@ -139,7 +153,7 @@ if uploaded_files:
     
     if st.button("🤖 ابدأ استخراج الطلبات بالذكاء الاصطناعي", type="primary"):
         if not api_key_input:
-            st.error("الرجاء إدخال مفتاح Gemini API في القائمة الجانبية أولاً.")
+            st.error("الرجاء إدخال مفتاح Gemini API.")
         else:
             extracted_rows = []
             progress_bar = st.progress(0)
@@ -149,7 +163,6 @@ if uploaded_files:
                 status_text.text(f"جارٍ معالجة الصورة ({i+1}/{len(uploaded_files)}): {file.name}")
                 try:
                     row = call_gemini_web(api_key_input, model_choice, file)
-                    row["_filename"] = file.name
                     extracted_rows.append(row)
                 except Exception as e:
                     err_row = {f: "" for f in FIELDS}
@@ -164,14 +177,27 @@ if uploaded_files:
             st.session_state["extracted_rows"] = extracted_rows
 
 if "extracted_rows" in st.session_state and st.session_state["extracted_rows"]:
-    st.subheader("📋 جدول الطلبات المستخرجة:")
-    df_view = pd.DataFrame(st.session_state["extracted_rows"])
-    st.dataframe(df_view, use_container_width=True)
+    st.subheader("📋 جدول الطلبات (قابل للتعديل المباشر وحذف التكرار):")
+    st.info("💡 انقر على أي خلية لتعديلها مباشرة، أو احذف أي صف مكرر. عمود (_filename) يوضح لك اسم الصورة لكل طلب لكي تعرف مصدرها بدقة.")
+    
+    df_current = pd.DataFrame(st.session_state["extracted_rows"])
+    
+    # محرر تفاعلي يسمح بالتعديل والحذف المباشر
+    edited_df = st.data_editor(df_current, num_rows="dynamic", use_container_width=True)
+    
+    st.session_state["extracted_rows"] = edited_df.to_dict(orient="records")
+    
+    # تصدير بقالب الشركة (بدون الأعمدة المؤقتة)
+    EXPORT_FIELDS = [
+        "اسم الزبون", "رقم الهاتف الاساسي", "رقم الهاتف الثانوي", "المحافظة",
+        "المنطقة", "نوع البضاعه", "عدد القطع", "السعر مع التوصيل", "حجم الطلب",
+        "الملاحظات", "نوع الطلب"
+    ]
     
     wb = Workbook()
     ws = wb.active
     ws.title = "Sheet1"
-    ws.append(FIELDS)
+    ws.append(EXPORT_FIELDS)
     
     for r in st.session_state["extracted_rows"]:
         ws.append([
