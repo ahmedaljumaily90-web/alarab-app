@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Al-Arab Order Web App (النسخة النهائية مع زر حذف المكرر بالكامل)
+Al-Arab Order Web App (النسخة النهائية المصححة والمستقرة)
 """
 import streamlit as st
 import pandas as pd
@@ -14,7 +14,7 @@ st.set_page_config(page_title="العراب - استخراج الطلبات", pa
 st.markdown("""
     <div style='background-color: #ffd400; padding: 15px; border-radius: 10px; text-align: center;'>
         <h1 style='color: #000; margin:0;'>العراب - نظام التوصيل الذكي (نسخة الهاتف)</h1>
-        <p style='color: #333; margin:5px 0 0 0;'>كشف التكرار، زر لحذف المكرر بالكامل، والتعديل المباشر</p>
+        <p style='color: #333; margin:5px 0 0 0;'>كشف التكرار، حذف المكرر بالكامل، والتعديل المباشر</p>
     </div>
     <br>
 """, unsafe_allow_html=True)
@@ -161,4 +161,46 @@ if uploaded_files:
             
             new_added_count = 0
             for i, file in enumerate(uploaded_files):
-                if file
+                if file:  # تم تصحيح الشرط هنا
+                    if file.name not in existing_files:
+                        status_text.text(f"جارٍ معالجة الصورة: {file.name}")
+                        try:
+                            row = call_gemini_web(api_key_input, model_choice, file)
+                            extracted_rows.append(row)
+                            new_added_count += 1
+                        except Exception as e:
+                            err_row = {f: "" for f in FIELDS}
+                            err_row["اسم الزبون"] = "خطأ في القراءة"
+                            err_row["الملاحظات"] = str(e)
+                            err_row["_filename"] = file.name
+                            err_row["_phone_status"] = "خطأ"
+                            extracted_rows.append(err_row)
+                progress_bar.progress((i + 1) / len(uploaded_files))
+                
+            status_text.text(f"اكتملت المعالجة! تمت إضافة {new_added_count} طلب جديد.")
+            st.session_state["extracted_rows"] = extracted_rows
+
+with st.expander("🔄 إعادة معالجة صورة واحدة فقط (في حال وجود خطأ في طلب محدد)"):
+    single_file = st.file_uploader("اختر الصورة التي بها خطأ فقط:", type=["png", "jpg", "jpeg", "webp"], key="single_upload")
+    if single_file and st.button("إعادة قراءة هذه الصورة فقط"):
+        if not api_key_input:
+            st.error("أدخل مفتاح Gemini API أولاً.")
+        else:
+            try:
+                single_row = call_gemini_web(api_key_input, model_choice, single_file)
+                if "extracted_rows" not in st.session_state:
+                    st.session_state["extracted_rows"] = []
+                st.session_state["extracted_rows"] = [r for r in st.session_state["extracted_rows"] if r.get("_filename") != single_file.name]
+                st.session_state["extracted_rows"].append(single_row)
+                st.success(f"تمت إعادة قراءة وتحديث بيانات الصورة ({single_file.name}) بنجاح!")
+            except Exception as ex:
+                st.error(f"حدث خطأ أثناء قراءة الصورة: {ex}")
+
+if "extracted_rows" in st.session_state and st.session_state["extracted_rows"]:
+    st.subheader("📋 جدول الطلبات (كشف التكرار والتعديل المباشر):")
+    
+    df_check = pd.DataFrame(st.session_state["extracted_rows"])
+    if not df_check.empty and "رقم الهاتف الاساسي" in df_check.columns:
+        phone_counts = df_check["رقم الهاتف الاساسي"].value_counts()
+        for idx, row in df_check.iterrows():
+            ph = row.get("رقم الهاتف الاساسي",
