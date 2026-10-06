@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Al-Arab Order Web App (النسخة النهائية مع تتبع الصور وإصلاح الأخطاء والتعديل)
+Al-Arab Order Web App (النسخة الذكية: كشف وحذف التكرار + إعادة معالجة صورة فردية)
 """
 import streamlit as st
 import pandas as pd
@@ -14,7 +14,7 @@ st.set_page_config(page_title="العراب - استخراج الطلبات", pa
 st.markdown("""
     <div style='background-color: #ffd400; padding: 15px; border-radius: 10px; text-align: center;'>
         <h1 style='color: #000; margin:0;'>العراب - نظام التوصيل الذكي (نسخة الهاتف)</h1>
-        <p style='color: #333; margin:5px 0 0 0;'>استخراج البيانات، تتبع الصور، والتعديل اليدوي الفوري</p>
+        <p style='color: #333; margin:5px 0 0 0;'>كشف وحذف التكرار، التعديل المباشر، وإعادة معالجة الصور الفردية</p>
     </div>
     <br>
 """, unsafe_allow_html=True)
@@ -36,7 +36,7 @@ with st.sidebar:
     if default_api_key:
         st.success("✔ تم تحميل المفتاح المحفوظ تلقائياً.")
     else:
-        st.info("💡 أدخل المفتاح مرة واحدة في قسم Secrets على Streamlit ليبقى محفوظاً دائماً.")
+        st.info("💡 أدخل المفتاح في قسم Secrets على Streamlit ليبقى محفوظاً دائماً.")
 
 FIELDS = [
     "اسم الزبون", "رقم الهاتف الاساسي", "رقم الهاتف الثانوي", "المحافظة",
@@ -79,7 +79,7 @@ SYSTEM_PROMPT = r"""
 """
 
 def normalize_num(s):
-    trans = str.maketrans("٠١ي٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
+    trans = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
     return str(s).translate(trans)
 
 def clean_phone_number(ph):
@@ -146,48 +146,76 @@ def call_gemini_web(api_key, model, uploaded_file):
     out["_filename"] = uploaded_file.name
     return out
 
-uploaded_files = st.file_uploader("📂 اختر أو التقط صور الطلبات", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True)
+# رفع مجموعة صور دفعة واحدة
+uploaded_files = st.file_uploader("📂 اختر أو التقط صور الطلبات (دفعة واحدة)", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True, key="bulk_upload")
 
 if uploaded_files:
-    st.success(f"تمت إضافة {len(uploaded_files)} صورة بنجاح.")
-    
-    if st.button("🤖 ابدأ استخراج الطلبات بالذكاء الاصطناعي", type="primary"):
+    if st.button("🤖 ابدأ استخراج الطلبات للصور المرفوعة", type="primary"):
         if not api_key_input:
             st.error("الرجاء إدخال مفتاح Gemini API.")
         else:
-            extracted_rows = []
+            extracted_rows = st.session_state.get("extracted_rows", [])
+            existing_files = {r.get("_filename") for r in extracted_rows}
+            
             progress_bar = st.progress(0)
             status_text = st.empty()
             
+            new_added_count = 0
             for i, file in enumerate(uploaded_files):
-                status_text.text(f"جارٍ معالجة الصورة ({i+1}/{len(uploaded_files)}): {file.name}")
-                try:
-                    row = call_gemini_web(api_key_input, model_choice, file)
-                    extracted_rows.append(row)
-                except Exception as e:
-                    err_row = {f: "" for f in FIELDS}
-                    err_row["اسم الزبون"] = "خطأ في القراءة"
-                    err_row["الملاحظات"] = str(e)
-                    err_row["_phone_status"] = "خطأ"
-                    err_row["_filename"] = file.name
-                    extracted_rows.append(err_row)
+                if file.name not in existing_files:
+                    status_text.text(f"جارٍ معالجة الصورة: {file.name}")
+                    try:
+                        row = call_gemini_web(api_key_input, model_choice, file)
+                        extracted_rows.append(row)
+                        new_added_count += 1
+                    except Exception as e:
+                        err_row = {f: "" for f in FIELDS}
+                        err_row["اسم الزبون"] = "خطأ في القراءة"
+                        err_row["الملاحظات"] = str(e)
+                        err_row["_filename"] = file.name
+                        extracted_rows.append(err_row)
                 progress_bar.progress((i + 1) / len(uploaded_files))
                 
-            status_text.text("اكتملت المعالجة بنجاح!")
+            status_text.text(f"اكتملت المعالجة! تمت إضافة {new_added_count} طلب جديد.")
             st.session_state["extracted_rows"] = extracted_rows
 
+# ميزة إعادة معالجة صورة مفردة عند وجود خطأ
+with st.expander("🔄 إعادة معالجة صورة واحدة فقط (في حال وجود خطأ في طلب محدد)"):
+    single_file = st.file_uploader("اختر الصورة التي بها خطأ فقط:", type=["png", "jpg", "jpeg", "webp"], key="single_upload")
+    if single_file and st.button("إعادة قراءة هذه الصورة فقط"):
+        if not api_key_input:
+            st.error("أدخل مفتاح Gemini API أولاً.")
+        else:
+            try:
+                single_row = call_gemini_web(api_key_input, model_choice, single_file)
+                if "extracted_rows" not in st.session_state:
+                    st.session_state["extracted_rows"] = []
+                # إذا كانت الصورة موجودة مسبقاً، استبدلها بالجديدة
+                st.session_state["extracted_rows"] = [r for r in st.session_state["extracted_rows"] if r.get("_filename") != single_file.name]
+                st.session_state["extracted_rows"].append(single_row)
+                st.success(f"تمت إعادة قراءة وتحديث بيانات الصورة ({single_file.name}) بنجاح!")
+            except Exception as ex:
+                st.error(f"حدث خطأ أثناء قراءة الصورة: {ex}")
+
 if "extracted_rows" in st.session_state and st.session_state["extracted_rows"]:
-    st.subheader("📋 جدول الطلبات (قابل للتعديل المباشر وحذف التكرار):")
-    st.info("💡 انقر على أي خلية لتعديلها مباشرة، أو احذف أي صف مكرر. عمود (_filename) يوضح لك اسم الصورة لكل طلب لكي تعرف مصدرها بدقة.")
+    st.subheader("📋 جدول الطلبات (قابل للتعديل وحشف التكرار):")
     
-    df_current = pd.DataFrame(st.session_state["extracted_rows"])
+    # فحص التكرار بناءً على رقم الهاتف الأساسي
+    df_check = pd.DataFrame(st.session_state["extracted_rows"])
+    if not df_check.empty and "رقم الهاتف الاساسي" in df_check.columns:
+        duplicates = df_check[df_check.duplicated(subset=["رقم الهاتف الاساسي"], keep=False) & (df_check["رقم الهاتف الاساسي"] != "")]
+        if not duplicates.empty:
+            st.warning(f"⚠ تنبيه: يوجد {len(duplicates)} طلب مكرر (بنفس رقم الهاتف الأساسي في الجدول أدناه).")
+            if st.button("🧹 حذف التكرارات تلقائياً (إبقاء أول طلب لكل رقم وحذف الباقي)", type="secondary"):
+                df_check = df_check.drop_duplicates(subset=["رقم الهاتف الاساسي"], keep="first")
+                st.session_state["extracted_rows"] = df_check.to_dict(orient="records")
+                st.rerun()
+
+    st.info("💡 يمكنك النقر على أي خلية لتعديلها مباشرة، أو حذف أي صف غير مرغوب فيه.")
     
-    # محرر تفاعلي يسمح بالتعديل والحذف المباشر
-    edited_df = st.data_editor(df_current, num_rows="dynamic", use_container_width=True)
-    
+    edited_df = st.data_editor(df_check, num_rows="dynamic", use_container_width=True)
     st.session_state["extracted_rows"] = edited_df.to_dict(orient="records")
     
-    # تصدير بقالب الشركة (بدون الأعمدة المؤقتة)
     EXPORT_FIELDS = [
         "اسم الزبون", "رقم الهاتف الاساسي", "رقم الهاتف الثانوي", "المحافظة",
         "المنطقة", "نوع البضاعه", "عدد القطع", "السعر مع التوصيل", "حجم الطلب",
