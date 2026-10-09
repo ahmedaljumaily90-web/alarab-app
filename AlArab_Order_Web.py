@@ -4,6 +4,7 @@ Al-Arab Order AI (نسخة الويب والهاتف - Streamlit)
 - التحقق التلقائي من أرقام الهواتف ومفتاح العراق (+964 / 0).
 - كشف الطلبات المكررة وتنبيه المستخدم وتمييزها بصرياً.
 - زر حذف الطلب المباشر وتصدير Excel.
+- دعم مفاتيح AQ (Bearer Token / x-goog-api-key).
 """
 
 import streamlit as st
@@ -15,8 +16,7 @@ from openpyxl import Workbook
 import pandas as pd
 
 APP_TITLE = "العراب - نظام التوصيل الذكي والمتقدم (الويب)"
-# ضع مفتاحك القياسي الصحيح هنا (الذي يبدأ بـ AIza...)
-DEFAULT_API_KEY = ""
+DEFAULT_API_KEY = "AQ.Ab8RN6LlVd5e2OYvsHwuXayOT0ez5NyEHBwK4Ohs4YNPpL_1pg"
 PREFERRED_MODELS = [
     "gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash",
     "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash"
@@ -147,8 +147,14 @@ def test_gemini_connection(api_key, model):
     model = clean_model_name(model)
     endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     payload = {"contents": [{"parts": [{"text": "Hello"}]}]}
-    headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
+    
+    # تجربة المصادقة المتعددة لضمان عمل مفاتيح AQ بكفاءة
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     r = requests.post(endpoint, headers=headers, json=payload, timeout=30)
+    if r.status_code != 200:
+        headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
+        r = requests.post(endpoint, headers=headers, json=payload, timeout=30)
+        
     if r.status_code == 200:
         return True, "تم الاتصال بنجاح بـ Gemini API والموديل يعمل بشكل ممتاز!"
     else:
@@ -170,10 +176,16 @@ def call_gemini(api_key, model, uploaded_file):
             "responseMimeType": "application/json"
         }
     }
-    headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
+    
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     r = requests.post(endpoint, headers=headers, json=payload, timeout=120)
     if r.status_code != 200:
+        headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
+        r = requests.post(endpoint, headers=headers, json=payload, timeout=120)
+        
+    if r.status_code != 200:
         raise RuntimeError(f"Gemini API {r.status_code}: {r.text[:1000]}")
+        
     data = r.json()
     try:
         text = data["candidates"][0]["content"]["parts"][0]["text"]
@@ -218,7 +230,7 @@ if "api_key" not in st.session_state:
 with st.sidebar:
     st.header("⚙ الإعدادات والذكاء الاصطناعي")
     
-    user_api_key = st.text_input("مفتاح Gemini API (يبدأ بـ AIza)", value=st.session_state.api_key, type="password")
+    user_api_key = st.text_input("مفتاح Gemini API", value=st.session_state.api_key, type="password")
     if user_api_key:
         st.session_state.api_key = user_api_key
         
@@ -235,7 +247,7 @@ with st.sidebar:
                 else:
                     st.error(msg)
                     
-    st.info("نظام تدقيق الهواتف وكشف التكرار مفعل تلقائياً.")
+    st.info("نظام تدقيق الهواتف وكشف التكرار وحذف الطلبات مفعل تلقائياً.")
 
 uploaded_files = st.file_uploader("📂 اختر صور الطلبات (يمكن اختيار عدة صور)", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True)
 
