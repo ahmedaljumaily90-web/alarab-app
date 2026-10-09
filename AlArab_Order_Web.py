@@ -2,8 +2,8 @@
 """
 Al-Arab Order AI (نسخة الويب والهاتف - Streamlit)
 - التحقق التلقائي من أرقام الهواتف ومفتاح العراق (+964 / 0).
-- كشف الطلبات المكررة وتنبيه المستخدم.
-- دعم مفاتيح Google Cloud / Gemini الحديثة (التي تبدأ بـ AQ).
+- كشف الطلبات المكررة وتنبيه المستخدم وتمييزها بصرياً.
+- زر وإمكانية حذف أي طلب مكرر أو غير مرغوب فيه مباشرة من الجدول.
 - رفع الصور من الهاتف ومعالجة البيانات وتصديرها بصيغة Excel.
 """
 
@@ -16,7 +16,6 @@ from openpyxl import Workbook
 import pandas as pd
 
 APP_TITLE = "العراب - نظام التوصيل الذكي والمتقدم (الويب)"
-# ضع مفتاحك الجديد هنا أو في حقل الإعدادات
 DEFAULT_API_KEY = "AQ.Ab8RN6IhVpOP2Ue57AOfmFxjs3YANxexU_Eq42eJ1SRySQ-JMw"
 PREFERRED_MODELS = [
     "gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash",
@@ -146,19 +145,13 @@ def clean_model_name(model):
 
 def test_gemini_connection(api_key, model):
     model = clean_model_name(model)
-    # تعديل طريقة الاتصال لتدعم المفاتيح الحديثة (AQ) عبر الـ Bearer Token أو الهيدر المناسب
     endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-    payload = {
-        "contents": [{"parts": [{"text": "Hello"}]}]
-    }
-    # دعم المفاتيح بصيغة Bearer أو x-goog-api-key حسب نوع المفتاح
+    payload = {"contents": [{"parts": [{"text": "Hello"}]}]}
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     r = requests.post(endpoint, headers=headers, json=payload, timeout=30)
     if r.status_code != 200:
-        # محاولة بديلة إذا كان المفتاح يقبل مفتاح API العادي
         headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
         r = requests.post(endpoint, headers=headers, json=payload, timeout=30)
-        
     if r.status_code == 200:
         return True, "تم الاتصال بنجاح بـ Gemini API والموديل يعمل بشكل ممتاز!"
     else:
@@ -180,17 +173,13 @@ def call_gemini(api_key, model, uploaded_file):
             "responseMimeType": "application/json"
         }
     }
-    
-    # تجربة المصادقة كـ Bearer أولاً ثم x-goog-api-key
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     r = requests.post(endpoint, headers=headers, json=payload, timeout=120)
     if r.status_code != 200:
         headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
         r = requests.post(endpoint, headers=headers, json=payload, timeout=120)
-        
     if r.status_code != 200:
         raise RuntimeError(f"Gemini API {r.status_code}: {r.text[:1000]}")
-        
     data = r.json()
     try:
         text = data["candidates"][0]["content"]["parts"][0]["text"]
@@ -252,14 +241,24 @@ with st.sidebar:
                 else:
                     st.error(msg)
                     
-    st.info("قم برفع صور المحادثات أو الطلبات من هاتفك بالأسفل، وسيقوم الذكاء الاصطناعي باستخراجها وتجهيزها بملف Excel.")
+    st.info("نظام تدقيق الهواتف وكشف التكرار مفعل تلقائياً.")
 
 uploaded_files = st.file_uploader("📂 اختر صور الطلبات (يمكن اختيار عدة صور)", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True)
 
 if "extracted_rows" not in st.session_state:
     st.session_state.extracted_rows = []
 
-if st.button("🤖 ابدأ استخراج الطلبات", type="primary"):
+col_btn1, col_btn2 = st.columns([3, 1])
+with col_btn1:
+    start_clicked = st.button("🤖 ابدأ استخراج الطلبات", type="primary", use_container_width=True)
+with col_btn2:
+    clear_clicked = st.button("🗑 حذف الكل", use_container_width=True)
+
+if clear_clicked:
+    st.session_state.extracted_rows = []
+    st.rerun()
+
+if start_clicked:
     if not st.session_state.api_key:
         st.error("الرجاء إدخال مفتاح Gemini API في الشريط الجانبي.")
     elif not uploaded_files:
@@ -289,29 +288,58 @@ if st.button("🤖 ابدأ استخراج الطلبات", type="primary"):
         st.success("تمت المعالجة بنجاح!")
 
 if st.session_state.extracted_rows:
-    st.subheader("📊 جدول الطلبات المستخرجة")
+    st.subheader("📊 جدول الطلبات المستخرجة (مع كشف التكرار)")
     
+    # فحص أعداد الهواتف لكشف التكرار
     phone_counts = {}
     for r in st.session_state.extracted_rows:
         ph = (r.get("رقم الهاتف الاساسي", "")).strip()
         if ph:
             phone_counts[ph] = phone_counts.get(ph, 0) + 1
 
-    display_data = []
-    for r in st.session_state.extracted_rows:
+    # عرض الطلبات مع خيار الحذف لكل طلب
+    indices_to_delete = []
+    
+    for idx, r in enumerate(list(st.session_state.extracted_rows)):
         ph = (r.get("رقم الهاتف الاساسي", "")).strip()
         status = r.get("_phone_status", "سليم")
+        is_duplicate = False
+        
         if ph and phone_counts.get(ph, 0) > 1:
             status = "⚠ طلب مكرر بنفس الرقم!"
-        
-        row_copy = {k: r.get(k, "") for k in FIELDS}
-        row_copy["الحالة / التحقق"] = status
-        row_copy["اسم الملف"] = r.get("_filename", "")
-        display_data.append(row_copy)
-        
-    df = pd.DataFrame(display_data)
-    st.dataframe(df, use_container_width=True)
+            is_duplicate = True
+            
+        # استخدام تصميم تفاعلي لكل طلب مع زر حذف خاص به
+        with st.container(border=True):
+            cols = st.columns([2, 2, 2, 2, 1])
+            with cols[0]:
+                st.markdown(f"**الزبون:** {r.get('اسم الزبون', '')}")
+                st.markdown(f"**الهاتف:** `{r.get('رقم الهاتف الاساسي', '')}`")
+            with cols[1]:
+                st.markdown(f"**المحافظة:** {r.get('المحافظة', '')}")
+                st.markdown(f"**المنطقة:** {r.get(' المنطقة', '')}")
+            with cols[2]:
+                st.markdown(f"**المنتج:** {r.get('نوع البضاعه', '')}")
+                st.markdown(f"**السعر:** {r.get('السعر مع التوصيل', '')}")
+            with cols[3]:
+                if is_duplicate:
+                    st.markdown(f"<span style='color: red; font-weight: bold;'>{status}</span>", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"<span style='color: green;'>{status}</span>", unsafe_allow_html=True)
+                st.markdown(f"*(ملف: {r.get('_filename', '')})*")
+            with cols[4]:
+                if st.button("🗑 حذف", key=f"del_{idx}"):
+                    indices_to_delete.append(idx)
+
+    # تنفيذ الحذف إذا ضغط المستخدم على أي زر حذف
+    if indices_to_delete:
+        for i in sorted(indices_to_delete, reverse=True):
+            del st.session_state.extracted_rows[i]
+        st.rerun()
+
+    st.divider()
     
+    # تصدير البيانات إلى Excel
     excel_io = create_excel_file(st.session_state.extracted_rows)
     st.download_button(
         label="📥 تحميل ملف الأكسل بقالب الشركة (Excel)",
