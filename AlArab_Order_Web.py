@@ -70,7 +70,7 @@ SYSTEM_PROMPT = r"""
 
 def img_to_b64(img_file):
     img = Image.open(img_file).convert("RGB")
-    max_side = 1600  # تقليل الحجم قليلاً لزيادة السرعة على الهواتف المحمولة
+    max_side = 1600
     if max(img.size) > max_side:
         scale = max_side / max(img.size)
         img = img.resize((int(img.width * scale), int(img.height * scale)), Image.LANCZOS)
@@ -162,4 +162,57 @@ def call_gemini(api_key, model, img_file):
             "responseMimeType": "application/json"
         }
     }
-    headers = {"x-goog-api-key": api_key
+    headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
+    r = requests.post(endpoint, headers=headers, json=payload, timeout=60)
+    if r.status_code != 200:
+        raise RuntimeError(f"Gemini API Error {r.status_code}: {r.text[:300]}...")
+    data = r.json()
+    try:
+        text = data["candidates"][0]["content"]["parts"][0]["text"]
+    except Exception:
+        raise RuntimeError("فشل قراءة الرد من نموذج الذكاء الاصطناعي.")
+    return parse_response(text)
+
+def create_excel(df_data):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Sheet1"
+    ws.append(FIELDS)
+    for row in df_data:
+        ws.append([
+            row.get("اسم الزبون", ""),
+            row.get("رقم الهاتف الاساسي", ""),
+            row.get("رقم الهاتف الثانوي", ""),
+            row.get("المحافظة", ""),
+            row.get("المنطقة", ""),
+            row.get("نوع البضاعه", ""),
+            row.get("عدد القطع", ""),
+            row.get("السعر مع التوصيل", ""),
+            "عادي",
+            row.get("الملاحظات", ""),
+            row.get("نوع الطلب", "طلب جديد")
+        ])
+    ws.freeze_panes = "A2"
+    out_buf = io.BytesIO()
+    wb.save(out_buf)
+    out_buf.seek(0)
+    return out_buf
+
+# تصميم واجهة الويب
+st.markdown("<h1 style='text-align: center; color: #d4af37;'>📦 العراب - نظام التوصيل الذكي والمتقدم</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: gray;'>استخراج الطلبات من الصور بدقة عالية للآيفون والأندرويد</p>", unsafe_allow_html=True)
+
+# الشريط الجانبي للإعدادات مع تضمين المفتاح
+with st.sidebar:
+    st.header("⚙️ الإعدادات")
+    DEFAULT_API_KEY = "AQ.Ab8RN6Kp3WxLw5nZAw2zd2wPb3Fn0Spq3A5OVUr1X_wNI6pRwg"
+    api_key_input = st.text_input("مفتاح Gemini API", type="password", value=DEFAULT_API_KEY)
+    model_choice = st.selectbox("اختر نموذج الذكاء الاصطناعي", ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"], index=0)
+    st.markdown("---")
+    st.info("💡 **تعليمات الاستخدام:**\n1. ارفع صور المحادثات أو لقطات الشاشة.\n2. اضغط على زر بدء الاستخراج.\n3. قم بالتعديل أو الحذف إن وجد، ثم حمّل ملف الأكسل.")
+
+if "processed_rows" not in st.session_state:
+    st.session_state.processed_rows = []
+
+# رفع الصور
+uploaded_
