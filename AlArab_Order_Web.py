@@ -214,5 +214,98 @@ with st.sidebar:
 if "processed_rows" not in st.session_state:
     st.session_state.processed_rows = []
 
-# رفع الصور
-uploaded_
+# رفع الصور (تم إصلاح السطر بالكامل هنا)
+uploaded_files = st.file_uploader("📂 اختر أو ارفع صور الطلبات (يدعم صور متعددة)", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True)
+
+col1, col2 = st.columns(2)
+with col1:
+    start_btn = st.button("🤖 ابدأ استخراج الطلبات", type="primary", use_container_width=True)
+with col2:
+    clear_btn = st.button("🗑 مسح النتائج الحالية", use_container_width=True)
+
+if clear_btn:
+    st.session_state.processed_rows = []
+    st.rerun()
+
+if start_btn:
+    if not api_key_input.strip():
+        st.error("⚠ يرجى إدخال مفتاح Gemini API في الشريط الجانبي أولاً.")
+    elif not uploaded_files:
+        st.warning("⚠ يرجى رفع صورة واحدة على الأقل.")
+    else:
+        st.session_state.processed_rows = []
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        total = len(uploaded_files)
+        for i, file_obj in enumerate(uploaded_files):
+            status_text.text(f"جارٍ معالجة الصورة {i+1} من {total}: {file_obj.name} ...")
+            try:
+                row = call_gemini(api_key_input.strip(), model_choice, file_obj)
+                row["_filename"] = file_obj.name
+                st.session_state.processed_rows.append(row)
+            except Exception as e:
+                err_row = {f: "" for f in FIELDS}
+                err_row["اسم الزبون"] = "خطأ في القراءة"
+                err_row["الملاحظات"] = str(e)[:150]
+                err_row["_filename"] = file_obj.name
+                err_row["_phone_status"] = "خطأ"
+                st.session_state.processed_rows.append(err_row)
+            
+            progress_bar.progress((i + 1) / total)
+            
+        status_text.text("✅ اكتملت عملية استخراج جميع الطلبات بنجاح!")
+        st.success("تم الانتهاء من المعالجة!")
+
+# عرض جدول البيانات والتحكم بها إذا كانت موجودة
+if st.session_state.processed_rows:
+    st.markdown("---")
+    st.subheader("📋 جدول الطلبات المستخرجة (قابل للتعديل)")
+    
+    df_display = pd.DataFrame(st.session_state.processed_rows)
+    phone_counts = df_display["رقم الهاتف الاساسي"].value_counts().to_dict()
+    
+    status_list = []
+    for idx, r in df_display.iterrows():
+        ph = str(r.get("رقم الهاتف الاساسي", "")).strip()
+        p_status = r.get("_phone_status", "سليم")
+        if ph and phone_counts.get(ph, 0) > 1:
+            status_list.append("⚠ مكرر بنفس الرقم")
+        elif p_status != "سليم":
+            status_list.append(p_status)
+        else:
+            status_list.append("✅ سليم")
+            
+    df_display["الحالة"] = status_list
+    
+    columns_to_show = FIELDS + ["الحالة", "_filename"]
+    existing_cols = [c for c in columns_to_show if c in df_display.columns]
+    
+    edited_df = st.data_editor(
+        df_display[existing_cols],
+        num_rows="dynamic",
+        use_container_width=True,
+        key="order_editor"
+    )
+    
+    updated_rows = []
+    for index, row in edited_df.iterrows():
+        row_dict = {f: str(row.get(f, "")) for f in FIELDS}
+        row_dict["_filename"] = row.get("_filename", "")
+        cleaned_ph, p_status = clean_phone_number(row_dict["رقم الهاتف الاساسي"])
+        row_dict["رقم الهاتف الاساسي"] = cleaned_ph
+        row_dict["_phone_status"] = p_status
+        updated_rows.append(row_dict)
+    
+    st.session_state.processed_rows = updated_rows
+
+    st.markdown("---")
+    excel_buffer = create_excel(st.session_state.processed_rows)
+    st.download_button(
+        label="📊 تحميل ملف الأكسل بصيغة الشركة (Excel)",
+        data=excel_buffer,
+        file_name=f"طلبات_العراب_{time.strftime('%Y%m%d_%H%M%S')}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        type="primary",
+        use_container_width=True
+    )
