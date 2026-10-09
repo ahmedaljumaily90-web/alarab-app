@@ -3,7 +3,7 @@
 Al-Arab Order AI (نسخة الويب والهاتف - Streamlit)
 - التحقق التلقائي من أرقام الهواتف ومفتاح العراق (+964 / 0).
 - كشف الطلبات المكررة وتنبيه المستخدم.
-- مفتاح الذكاء الاصطناعي مثبت ومحفوظ تلقائياً.
+- خانة إدخال مفتاح الذكاء الاصطناعي في الشريط الجانبي.
 - رفع الصور من الهاتف ومعالجة البيانات وتصديرها بصيغة Excel.
 """
 
@@ -16,7 +16,6 @@ from openpyxl import Workbook
 import pandas as pd
 
 APP_TITLE = "العراب - نظام التوصيل الذكي والمتقدم (الويب)"
-# تم تثبيت المفتاح الناجح الخاص بك هنا تلقائياً
 DEFAULT_API_KEY = "AQ.Ab8RN6LlVd5e2OYvsHwuXayOT0ez5NyEHBwK4Ohs4YNPpL_1pg"
 PREFERRED_MODELS = [
     "gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash",
@@ -218,17 +217,22 @@ st.markdown("<h2 style='text-align: center; color: #ffd400;'>العراب - نظ
 with st.sidebar:
     st.header("⚙ الإعدادات والذكاء الاصطناعي")
     
+    # إعادة خانة إدخال المفتاح في الشريط الجانبي مع جعل مفتاحك كقيمة افتراضية جاهزة
+    user_api_key = st.text_input("مفتاح Gemini API", value=DEFAULT_API_KEY, type="password")
     selected_model = st.selectbox("اختر النموذج", PREFERRED_MODELS, index=4)
     
     if st.button("🔌 اختبار الاتصال بالذكاء الاصطناعي"):
-        with st.spinner("جاري اختبار الاتصال..."):
-            success, msg = test_gemini_connection(DEFAULT_API_KEY, selected_model)
-            if success:
-                st.success(msg)
-            else:
-                st.error(msg)
+        if not user_api_key:
+            st.error("الرجاء إدخال المفتاح أولاً.")
+        else:
+            with st.spinner("جاري اختبار الاتصال..."):
+                success, msg = test_gemini_connection(user_api_key, selected_model)
+                if success:
+                    st.success(msg)
+                else:
+                    st.error(msg)
                     
-    st.info("مفتاح الـ API مثبت ومفعل تلقائياً. قم برفع صور المحادثات أو الطلبات من هاتفك بالأسفل لاستخراج الطلبات فوراً.")
+    st.info("قم برفع صور المحادثات أو الطلبات من هاتفك بالأسفل، وسيقوم الذكاء الاصطناعي باستخراجها وتجهيزها بملف Excel.")
 
 uploaded_files = st.file_uploader("📂 اختر صور الطلبات (يمكن اختيار عدة صور)", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True)
 
@@ -236,7 +240,9 @@ if "extracted_rows" not in st.session_state:
     st.session_state.extracted_rows = []
 
 if st.button("🤖 ابدأ استخراج الطلبات", type="primary"):
-    if not uploaded_files:
+    if not user_api_key:
+        st.error("الرجاء إدخال مفتاح Gemini API في الشريط الجانبي.")
+    elif not uploaded_files:
         st.warning("الرجاء رفع صورة واحدة على الأقل.")
     else:
         rows = []
@@ -246,7 +252,7 @@ if st.button("🤖 ابدأ استخراج الطلبات", type="primary"):
         for idx, file in enumerate(uploaded_files):
             status_text.text(f"جارٍ معالجة الصورة {idx+1} من {len(uploaded_files)}: {file.name}")
             try:
-                res = call_gemini(DEFAULT_API_KEY, selected_model, file)
+                res = call_gemini(user_api_key, selected_model, file)
                 res["_filename"] = file.name
                 rows.append(res)
             except Exception as e:
