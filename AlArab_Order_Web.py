@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 AlArab Order AI - النسخة الويب (متوافقة مع الآيفون، الأندرويد، وجميع المتصفحات)
+- جلب واختيار النموذج المناسب تلقائياً من الـ API.
 - التحقق التلقائي من أرقام الهواتف ومفتاح العراق (+964 / 0).
 - كشف الطلبات المكررة وتنبيه المستخدم.
 - إمكانية حذف أو تعديل الطلبات مباشرة.
@@ -25,20 +26,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
-# قائمة النماذج المتاحة وتضمين فلاش 3
-PREFERRED_MODELS = [
-    "gemini-3.5-flash",
-    "gemini-3.5-flash-lite",
-    "gemini-3.7-flash",
-    "gemini-3.8-flash",
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-1.5-pro",
-]
-
-DEFAULT_MODEL = "gemini-3.5-flash"
 
 FIELDS = [
     "اسم الزبون", "رقم الهاتف الاساسي", "رقم الهاتف الثانوي", "المحافظة",
@@ -164,6 +151,31 @@ def parse_response(text):
     out["السعر مع التوصيل"] = clean_price_format(data.get("السعر مع التوصيل", ""))
     return out
 
+def get_best_available_model(api_key):
+    """جلب النماذج المتاحة من الفرم والاختيار التلقائي للنموذج الأنسب"""
+    url = f"[https://generativelanguage.googleapis.com/v1beta/models](https://generativelanguage.googleapis.com/v1beta/models)"
+    try:
+        r = requests.get(url, headers={"x-goog-api-key": api_key}, timeout=15)
+        if r.status_code == 200:
+            data = r.json()
+            models = data.get("models", [])
+            valid_models = []
+            for m in models:
+                name = m.get("name", "").replace("models/", "")
+                methods = m.get("supportedGenerationMethods", [])
+                if "generateContent" in methods and "image" not in name.lower() and "embedding" not in name.lower():
+                    valid_models.append(name)
+            
+            # تفضيل نماذج فلاش الحديثة إن وجدت
+            for pref in ["gemini-2.5-flash", "gemini-3.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]:
+                if pref in valid_models:
+                    return pref
+            if valid_models:
+                return valid_models[0]
+    except Exception:
+        pass
+    return "gemini-1.5-flash"  # النموذج الافتراضي الاحتياطي الآمن
+
 def call_gemini(api_key, model, img_file):
     endpoint = f"[https://generativelanguage.googleapis.com/v1beta/models/](https://generativelanguage.googleapis.com/v1beta/models/){model}:generateContent"
     b64 = img_to_b64(img_file)
@@ -217,16 +229,15 @@ def create_excel(df_data):
 
 # تصميم واجهة الويب
 st.markdown("<h1 style='text-align: center; color: #d4af37;'>📦 العراب - نظام التوصيل الذكي والمتقدم</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: gray;'>استخراج الطلبات من الصور بدقة عالية للآيفون والأندرويد</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: gray;'>استخراج الطلبات من الصور بدقة عالية للآيفون والأندرويد (تحديد تلقائي للنموذج المناسب)</p>", unsafe_allow_html=True)
 
-# الشريط الجانبي للإعدادات مع تضمين المفتاح والنماذج الموسعة
+# الشريط الجانبي للإعدادات
 with st.sidebar:
     st.header("⚙️ الإعدادات")
     DEFAULT_API_KEY = "AQ.Ab8RN6Kp3WxLw5nZAw2zd2wPb3Fn0Spq3A5OVUr1X_wNI6pRwg"
     api_key_input = st.text_input("مفتاح Gemini API", type="password", value=DEFAULT_API_KEY)
     
-    model_choice = st.selectbox("اختر نموذج الذكاء الاصطناعي", PREFERRED_MODELS, index=0)
-    
+    st.success("🤖 النظام سيقوم باختيار النموذج المناسب تلقائياً حسب مفتاحك.")
     st.markdown("---")
     st.info("💡 **تعليمات الاستخدام:**\n1. ارفع صور المحادثات أو لقطات الشاشة.\n2. اضغط على زر بدء الاستخراج.\n3. قم بالتعديل أو الحذف إن وجد، ثم حمّل ملف الأكسل.")
 
@@ -256,11 +267,15 @@ if start_btn:
         progress_bar = st.progress(0)
         status_text = st.empty()
         
+        # اختيار النموذج المناسب تلقائياً من مفتاح الـ API
+        status_text.text("جارٍ فحص واختيار أفضل نموذج مدعوم لحسابك...")
+        selected_model = get_best_available_model(api_key_input.strip())
+        
         total = len(uploaded_files)
         for i, file_obj in enumerate(uploaded_files):
-            status_text.text(f"جارٍ معالجة الصورة {i+1} من {total}: {file_obj.name} ...")
+            status_text.text(f"جارٍ معالجة الصورة {i+1} من {total} باستخدام ({selected_model}): {file_obj.name} ...")
             try:
-                row = call_gemini(api_key_input.strip(), model_choice, file_obj)
+                row = call_gemini(api_key_input.strip(), selected_model, file_obj)
                 row["_filename"] = file_obj.name
                 st.session_state.processed_rows.append(row)
             except Exception as e:
@@ -273,7 +288,7 @@ if start_btn:
             
             progress_bar.progress((i + 1) / total)
             
-        status_text.text("✅ اكتملت عملية استخراج جميع الطلبات بنجاح!")
+        status_text.text(f"✅ اكتملت العملية بنجاح باستخدام النموذج: {selected_model}")
         st.success("تم الانتهاء من المعالجة!")
 
 # عرض جدول البيانات والتحكم بها إذا كانت موجودة
