@@ -16,7 +16,7 @@ from openpyxl import Workbook
 import pandas as pd
 
 APP_TITLE = "العراب - نظام التوصيل الذكي والمتقدم (الويب)"
-DEFAULT_API_KEY = "AQ.Ab8RN6I2N21DuvR1msayHwB3Z2VtBVth2rcAvWCypm4w4cpSqw"
+DEFAULT_API_KEY = "AQ.Ab8RN6Lq8Ng3Nxc6rgzT9guUFNQwNVCzKoFOFiz7Vz9zL_HZBw"
 PREFERRED_MODELS = [
     "gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash",
     "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash"
