@@ -73,7 +73,8 @@ def img_to_b64_from_uploaded(uploaded_file):
     return base64.b64encode(buf.getvalue()).decode("ascii")
 
 def normalize_num(s):
-    trans = str.maketrans("٠١ي٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
+    # تم تصحيح الأحرف لتتطابق تماماً في الطول
+    trans = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
     return str(s).translate(trans)
 
 def clean_phone_number(ph):
