@@ -3,7 +3,7 @@
 Al-Arab Order AI (نسخة الويب والهاتف - Streamlit)
 - التحقق التلقائي من أرقام الهواتف ومفتاح العراق (+964 / 0).
 - كشف الطلبات المكررة وتنبيه المستخدم.
-- زر لاختبار صحة مفتاح الـ API واتصال الموديل.
+- مفتاح الذكاء الاصطناعي مثبت ومحفوظ تلقائياً.
 - رفع الصور من الهاتف ومعالجة البيانات وتصديرها بصيغة Excel.
 """
 
@@ -16,7 +16,8 @@ from openpyxl import Workbook
 import pandas as pd
 
 APP_TITLE = "العراب - نظام التوصيل الذكي والمتقدم (الويب)"
-DEFAULT_API_KEY = "AQ.Ab8RN6Kp3WxLw5nZAw2zd2wPb3Fn0Spq3A5OVUr1X_wNI6pRwg"
+# مفتاح الذكاء الاصطناعي المثبت تلقائياً
+DEFAULT_API_KEY = "AQ.Ab8RN6LlVd5e2OYvsHwuXayOT0ez5NyEHBwK4Ohs4YNPpL_1pg"
 PREFERRED_MODELS = [
     "gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash",
     "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash"
@@ -73,7 +74,6 @@ def img_to_b64_from_uploaded(uploaded_file):
     return base64.b64encode(buf.getvalue()).decode("ascii")
 
 def normalize_num(s):
-    # تم تصحيح الأحرف لتتطابق تماماً في الطول
     trans = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
     return str(s).translate(trans)
 
@@ -218,21 +218,18 @@ st.markdown("<h2 style='text-align: center; color: #ffd400;'>العراب - نظ
 with st.sidebar:
     st.header("⚙ الإعدادات والذكاء الاصطناعي")
     
-    user_api_key = st.text_input("مفتاح Gemini API", value=DEFAULT_API_KEY, type="password")
+    # تم تثبيت المفتاح كقيمة افتراضية مخفية ولا تحتاج لإدخاله
     selected_model = st.selectbox("اختر النموذج", PREFERRED_MODELS, index=4)
     
     if st.button("🔌 اختبار الاتصال بالذكاء الاصطناعي"):
-        if not user_api_key:
-            st.error("الرجاء إدخال المفتاح أولاً.")
-        else:
-            with st.spinner("جاري اختبار الاتصال..."):
-                success, msg = test_gemini_connection(user_api_key, selected_model)
-                if success:
-                    st.success(msg)
-                else:
-                    st.error(msg)
+        with st.spinner("جاري اختبار الاتصال..."):
+            success, msg = test_gemini_connection(DEFAULT_API_KEY, selected_model)
+            if success:
+                st.success(msg)
+            else:
+                st.error(msg)
                     
-    st.info("قم برفع صور المحادثات أو الطلبات من هاتفك بالأسفل، وسيقوم الذكاء الاصطناعي باستخراجها وتجهيزها بملف Excel.")
+    st.info("مفتاح الـ API مثبت ومفعل تلقائياً. قم برفع صور المحادثات أو الطلبات من هاتفك بالأسفل لاستخراج الطلبات فوراً.")
 
 uploaded_files = st.file_uploader("📂 اختر صور الطلبات (يمكن اختيار عدة صور)", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True)
 
@@ -240,9 +237,7 @@ if "extracted_rows" not in st.session_state:
     st.session_state.extracted_rows = []
 
 if st.button("🤖 ابدأ استخراج الطلبات", type="primary"):
-    if not user_api_key:
-        st.error("الرجاء إدخال مفتاح Gemini API في الشريط الجانبي.")
-    elif not uploaded_files:
+    if not uploaded_files:
         st.warning("الرجاء رفع صورة واحدة على الأقل.")
     else:
         rows = []
@@ -252,7 +247,7 @@ if st.button("🤖 ابدأ استخراج الطلبات", type="primary"):
         for idx, file in enumerate(uploaded_files):
             status_text.text(f"جارٍ معالجة الصورة {idx+1} من {len(uploaded_files)}: {file.name}")
             try:
-                res = call_gemini(user_api_key, selected_model, file)
+                res = call_gemini(DEFAULT_API_KEY, selected_model, file)
                 res["_filename"] = file.name
                 rows.append(res)
             except Exception as e:
