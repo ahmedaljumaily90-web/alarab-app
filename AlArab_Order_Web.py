@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
 Al-Arab Order AI (نسخة الويب والهاتف - Streamlit)
-- التحقق التلقائي من أرقام الهواتف وإمكانية تعديلها بسهولة.
+- التحقق التلقائي من أرقام الهواتف وتعديلها يدوياً.
 - كشف الطلبات المكررة وتنبيه المستخدم.
-- زر إعادة معالجة صورة واحدة مفردة دون الجدول كله.
+- زر إعادة معالجة صورة واحدة مفردة دون إعادة الجدول كله.
 - زر حذف الطلب المباشر وتصدير Excel.
 """
 
@@ -248,6 +248,7 @@ if "extracted_rows" not in st.session_state:
 if "file_objects" not in st.session_state:
     st.session_state.file_objects = {}
 
+# تحديث قاموس الملفات المرفوعة للإشارة إليها عند إعادة المعالجة الفردية
 if uploaded_files:
     for f in uploaded_files:
         st.session_state.file_objects[f.name] = f
@@ -313,4 +314,59 @@ if st.session_state.extracted_rows:
             is_duplicate = True
             
         with st.container(border=True):
-            cols =
+            cols = st.columns([2, 2, 2, 2, 1, 1])
+            with cols[0]:
+                st.markdown(f"**الزبون:** {r.get('اسم الزبون', '')}")
+                # إمكانية تعديل رقم الهاتف مباشرة لكل طلب
+                new_phone = st.text_input("الهاتف الأساسي", value=r.get('رقم الهاتف الاساسي', ''), key=f"phone_edit_{idx}")
+                if new_phone != r.get('رقم الهاتف الاساسي', ''):
+                    cleaned_ph, p_status = clean_phone_number(new_phone)
+                    st.session_state.extracted_rows[idx]['رقم الهاتف الاساسي'] = cleaned_ph
+                    st.session_state.extracted_rows[idx]['_phone_status'] = p_status
+                    st.rerun()
+            with cols[1]:
+                st.markdown(f"**المحافظة:** {r.get('المحافظة', '')}")
+                st.markdown(f"**المنطقة:** {r.get('المنطقة', '')}")
+            with cols[2]:
+                st.markdown(f"**المنتج:** {r.get('نوع البضاعه', '')}")
+                st.markdown(f"**السعر:** {r.get('السعر مع التوصيل', '')}")
+            with cols[3]:
+                if is_duplicate:
+                    st.markdown(f"<span style='color: red; font-weight: bold;'>{status}</span>", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"<span style='color: green;'>{status}</span>", unsafe_allow_html=True)
+                st.markdown(f"*(ملف: {r.get('_filename', '')})*")
+            with cols[4]:
+                # زر إعادة معالجة الصورة الواحدة فقط
+                if st.button("🔄 إعادة", key=f"reprocess_{idx}"):
+                    fname = r.get('_filename')
+                    if fname in st.session_state.file_objects:
+                        with st.spinner(f"جاري إعادة معالجة {fname}..."):
+                            try:
+                                updated_res = call_gemini(st.session_state.api_key, selected_model, st.session_state.file_objects[fname])
+                                updated_res["_filename"] = fname
+                                st.session_state.extracted_rows[idx] = updated_res
+                                st.success("تم التحديث!")
+                                st.rerun()
+                            except Exception as ex:
+                                st.error(f"خطأ: {ex}")
+                    else:
+                        st.warning("الرجاء إعادة رفع الصور للأعلى لتفعيل إعادة المعالجة الفردية.")
+            with cols[5]:
+                if st.button("🗑 حذف", key=f"del_{idx}"):
+                    indices_to_delete.append(idx)
+
+    if indices_to_delete:
+        for i in sorted(indices_to_delete, reverse=True):
+            del st.session_state.extracted_rows[i]
+        st.rerun()
+
+    st.divider()
+    
+    excel_io = create_excel_file(st.session_state.extracted_rows)
+    st.download_button(
+        label="📥 تحميل ملف الأكسل بقالب الشركة (Excel)",
+        data=excel_io,
+        file_name="طلبات_العراب_قالب_الشركة.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
