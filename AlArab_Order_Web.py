@@ -16,7 +16,7 @@ from openpyxl import Workbook
 import pandas as pd
 
 APP_TITLE = "العراب - نظام التوصيل الذكي والمتقدم (الويب)"
-# مفتاح الذكاء الاصطناعي المثبت تلقائياً
+# تم تثبيت المفتاح الناجح الخاص بك هنا تلقائياً
 DEFAULT_API_KEY = "AQ.Ab8RN6LlVd5e2OYvsHwuXayOT0ez5NyEHBwK4Ohs4YNPpL_1pg"
 PREFERRED_MODELS = [
     "gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash",
@@ -218,7 +218,6 @@ st.markdown("<h2 style='text-align: center; color: #ffd400;'>العراب - نظ
 with st.sidebar:
     st.header("⚙ الإعدادات والذكاء الاصطناعي")
     
-    # تم تثبيت المفتاح كقيمة افتراضية مخفية ولا تحتاج لإدخاله
     selected_model = st.selectbox("اختر النموذج", PREFERRED_MODELS, index=4)
     
     if st.button("🔌 اختبار الاتصال بالذكاء الاصطناعي"):
