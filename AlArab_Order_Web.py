@@ -131,4 +131,5 @@ def clean_price_format(val):
 
 def clean_json_text(txt):
     txt = txt.strip()
-    txt = re.sub(r"^```(?:json)?\s*", "", txt, flags=re
+    # تم تصحيح هذا السطر بالكامل لمنع أي أخطاء برمجية
+    txt = re.sub(r"^
