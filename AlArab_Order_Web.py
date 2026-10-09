@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-Al-Arab Order AI (نسخة الويب والهاتف - Streamlit)
+Al-Arab Order AI (نسخة الويب والهاتف - Streamlit مع حفظ مفتاح API)
 - التحقق التلقائي من أرقام الهواتف ومفتاح العراق (+964 / 0).
 - كشف الطلبات المكررة وتنبيه المستخدم.
+- حفظ مفتاح Gemini API وتذكره لتسهيل الاستخدام.
 - رفع الصور من الهاتف ومعالجة البيانات وتصديرها بصيغة Excel.
 """
 
@@ -15,7 +16,10 @@ from openpyxl import Workbook
 import pandas as pd
 
 APP_TITLE = "العراب - نظام التوصيل الذكي والمتقدم (الويب)"
-DEFAULT_MODEL = "gemini-3.5-flash-lite"
+PREFERRED_MODELS = [
+    "gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash",
+    "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash"
+]
 
 FIELDS = [
     "اسم الزبون", "رقم الهاتف الاساسي", "رقم الهاتف الثانوي", "المحافظة",
@@ -133,11 +137,6 @@ def parse_response(text):
     out["السعر مع التوصيل"] = clean_price_format(data.get("السعر مع التوصيل", ""))
     return out
 
-PREFERRED_MODELS = [
-    "gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash",
-    "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash"
-]
-
 def clean_model_name(model):
     model = (model or "").strip()
     model = model.replace("models/", "").replace(" ", "")
@@ -183,7 +182,7 @@ def create_excel_file(rows):
             row.get("رقم الهاتف الاساسي", ""),
             row.get("رقم الهاتف الثانوي", ""),
             row.get("المحافظة", ""),
-            row.get(" المنطقة", ""),
+            row.get("المنطقة", ""),
             row.get("نوع البضاعه", ""),
             row.get("عدد القطع", ""),
             row.get("السعر مع التوصيل", ""),
@@ -201,11 +200,20 @@ st.set_page_config(page_title=APP_TITLE, layout="wide")
 
 st.markdown("<h2 style='text-align: center; color: #ffd400;'>العراب - نظام التوصيل الذكي والمتقدم (الهاتف والويب)</h2>", unsafe_allow_html=True)
 
+# إدارة الـ Session State لحفظ مفتاح الـ API
+if "api_key" not in st.session_state:
+    st.session_state.api_key = ""
+
 with st.sidebar:
-    st.header("⚙ الإعدادات")
-    api_key_input = st.text_input("مفتاح Gemini API", type="password")
+    st.header("⚙ الإعدادات والذكاء الاصطناعي")
+    
+    # حقل إدخال مفتاح الـ API مع تحديثه مباشرة في الـ session_state
+    user_api_key = st.text_input("مفتاح Gemini API", value=st.session_state.api_key, type="password")
+    if user_api_key:
+        st.session_state.api_key = user_api_key
+        
     selected_model = st.selectbox("اختر النموذج", PREFERRED_MODELS, index=4)
-    st.info("قم برفع صور المحادثات أو الطلبات من هاتفك بالأسفل، وسيقوم الذكاء الاصطناعي باستخراجها وتجهيزها بملف Excel.")
+    st.info("قم بإدخال مفتاح الـ API الخاص بك مرة واحدة، وارفع صور المحادثات من هاتفك بالأسفل لاستخراج الطلبات فوراً.")
 
 uploaded_files = st.file_uploader("📂 اختر صور الطلبات (يمكن اختيار عدة صور)", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True)
 
@@ -213,8 +221,8 @@ if "extracted_rows" not in st.session_state:
     st.session_state.extracted_rows = []
 
 if st.button("🤖 ابدأ استخراج الطلبات", type="primary"):
-    if not api_key_input:
-        st.error("الرجاء إدخال مفتاح Gemini API في الشريط الجانبي.")
+    if not st.session_state.api_key:
+        st.error("الرجاء إدخال مفتاح Gemini API في الشريط الجانبي أولاً.")
     elif not uploaded_files:
         st.warning("الرجاء رفع صورة واحدة على الأقل.")
     else:
@@ -225,7 +233,7 @@ if st.button("🤖 ابدأ استخراج الطلبات", type="primary"):
         for idx, file in enumerate(uploaded_files):
             status_text.text(f"جارٍ معالجة الصورة {idx+1} من {len(uploaded_files)}: {file.name}")
             try:
-                res = call_gemini(api_key_input, selected_model, file)
+                res = call_gemini(st.session_state.api_key, selected_model, file)
                 res["_filename"] = file.name
                 rows.append(res)
             except Exception as e:
