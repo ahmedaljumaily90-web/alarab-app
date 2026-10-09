@@ -17,7 +17,7 @@ import pandas as pd
 
 APP_TITLE = "العراب - نظام التوصيل الذكي والمتقدم (الويب)"
 # ضع مفتاحك الجديد هنا أو في حقل الإعدادات
-DEFAULT_API_KEY = "AQ.Ab8RN6IhVpOP2Ue57AOfmFxjs3YANxexU_Eq42eJ1SRySQ-JMw"
+DEFAULT_API_KEY = "AQ.Ab8RN6KEDeXdvgTfUqnv8WxSnkS326csNKeg5k-rDwR0nRpz4A"
 PREFERRED_MODELS = [
     "gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash",
     "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash"
