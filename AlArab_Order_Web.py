@@ -4,7 +4,7 @@ Al-Arab Order AI (نسخة الويب والهاتف - Streamlit)
 - التحقق التلقائي من أرقام الهواتف ومفتاح العراق (+964 / 0).
 - كشف الطلبات المكررة وتنبيه المستخدم وتمييزها بصرياً.
 - زر حذف الطلب المباشر وتصدير Excel.
-- حل جذري لمشكلة المصادقة وتثبيت المفتاح بالطريقة الصحيحة.
+- حل مشكلة توقف المفتاح عبر إدارته بأمان.
 """
 
 import streamlit as st
@@ -16,7 +16,6 @@ from openpyxl import Workbook
 import pandas as pd
 
 APP_TITLE = "العراب - نظام التوصيل الذكي والمتقدم (الويب)"
-DEFAULT_API_KEY = "AQ.Ab8RN6Lq8Ng3Nxc6rgzT9guUFNQwNVCzKoFOFiz7Vz9zL_HZBw"
 PREFERRED_MODELS = [
     "gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash",
     "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash"
@@ -148,7 +147,6 @@ def test_gemini_connection(api_key, model):
     endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     payload = {"contents": [{"parts": [{"text": "Hello"}]}]}
     
-    # محاولة الاتصال بالهيدرين معاً لضمان عدم رفض المفتاح نهائياً
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     r = requests.post(endpoint, headers=headers, json=payload, timeout=30)
     if r.status_code != 200:
@@ -158,7 +156,7 @@ def test_gemini_connection(api_key, model):
     if r.status_code == 200:
         return True, "تم الاتصال بنجاح بـ Gemini API والموديل يعمل بشكل ممتاز!"
     else:
-        return False, f"فشل الاتصال (كود الخطأ {r.status_code}): يرجى التأكد من صلاحية المفتاح."
+        return False, f"فشل الاتصال (كود الخطأ {r.status_code}): يرجى إدخال مفتاح صحيح."
 
 def call_gemini(api_key, model, uploaded_file):
     model = clean_model_name(model)
@@ -224,13 +222,14 @@ st.set_page_config(page_title=APP_TITLE, layout="wide")
 
 st.markdown("<h2 style='text-align: center; color: #ffd400;'>العراب - نظام التوصيل الذكي والمتقدم (الهاتف والويب)</h2>", unsafe_allow_html=True)
 
-if "api_key" not in st.session_state or not st.session_state.api_key:
-    st.session_state.api_key = DEFAULT_API_KEY
+if "api_key" not in st.session_state:
+    st.session_state.api_key = ""
 
 with st.sidebar:
     st.header("⚙ الإعدادات والذكاء الاصطناعي")
     
-    user_api_key = st.text_input("مفتاح Gemini API", value=st.session_state.api_key, type="password")
+    # حقل إدخال المفتاح الآمن (لا يتسبب في إيقاف السيرفر عند تركه فارغاً أو تغييره)
+    user_api_key = st.text_input("مفتاح Gemini API", value=st.session_state.api_key, type="password", placeholder="الصق مفتاح الـ AQ هنا...")
     if user_api_key:
         st.session_state.api_key = user_api_key
         
@@ -238,7 +237,7 @@ with st.sidebar:
     
     if st.button("🔌 اختبار الاتصال بالذكاء الاصطناعي"):
         if not st.session_state.api_key:
-            st.error("الرجاء إدخال المفتاح أولاً.")
+            st.error("الرجاء إدخال المفتاح في الشريط الجانبي أولاً.")
         else:
             with st.spinner("جاري اختبار الاتصال..."):
                 success, msg = test_gemini_connection(st.session_state.api_key, selected_model)
@@ -247,7 +246,7 @@ with st.sidebar:
                 else:
                     st.error(msg)
                     
-    st.info("نظام تدقيق الهواتف وكشف التكرار وحذف الطلبات مفعل تلقائياً.")
+    st.info("قم بإدخال مفتاحك مرة واحدة في الشريط الجانبي، والنظام جاهز لكشف التكرار وحذف الطلبات وتصدير الأكسل.")
 
 uploaded_files = st.file_uploader("📂 اختر صور الطلبات (يمكن اختيار عدة صور)", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True)
 
@@ -266,7 +265,7 @@ if clear_clicked:
 
 if start_clicked:
     if not st.session_state.api_key:
-        st.error("الرجاء إدخال مفتاح Gemini API في الشريط الجانبي.")
+        st.error("الرجاء إدخال مفتاح Gemini API في الشريط الجانبي أولاً.")
     elif not uploaded_files:
         st.warning("الرجاء رفع صورة واحدة على الأقل.")
     else:
