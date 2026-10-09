@@ -4,7 +4,7 @@ Al-Arab Order AI (نسخة الويب والهاتف - Streamlit)
 - التحقق التلقائي من أرقام الهواتف ومفتاح العراق (+964 / 0).
 - كشف الطلبات المكررة وتنبيه المستخدم وتمييزها بصرياً.
 - زر حذف الطلب المباشر وتصدير Excel.
-- تثبيت ودعم مفاتيح AQ الحديثة لمنع خطأ 401.
+- تثبيت ودعم مفتاح AQ الجديد تلقائياً لمنع خطأ 401.
 """
 
 import streamlit as st
@@ -17,7 +17,7 @@ import pandas as pd
 
 APP_TITLE = "العراب - نظام التوصيل الذكي والمتقدم (الويب)"
 # تثبيت مفتاحك الجديد بشكل دائم وصحيح في النظام
-DEFAULT_API_KEY = "AQ.Ab8RN6KEDeXdvgTfUqnv8WxSnkS326csNKeg5k-rDwR0nRpz4A"
+DEFAULT_API_KEY = "AQ.Ab8RN6I2N21DuvR1msayHwB3Z2VtBVth2rcAvWCypm4w4cpSqw"
 PREFERRED_MODELS = [
     "gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash",
     "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash"
@@ -149,7 +149,6 @@ def test_gemini_connection(api_key, model):
     endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     payload = {"contents": [{"parts": [{"text": "Hello"}]}]}
     
-    # دمج طريقتي الاتصال لضمان قبول مفاتيح AQ وتجاوز خطأ 401
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     r = requests.post(endpoint, headers=headers, json=payload, timeout=30)
     if r.status_code != 200:
@@ -189,9 +188,12 @@ def call_gemini(api_key, model, uploaded_file):
         
     data = r.json()
     try:
-        text = data["candidates"][0]["content"]["parts"][0]["text"]
+        text = data["candidates"][0]["content"]["parts"]["text"] if "text" in data["candidates"][0]["content"]["parts"] else data["candidates"][0]["content"]["parts"][0]["text"]
     except Exception:
-        raise RuntimeError("لم يصل نص JSON من Gemini: " + json.dumps(data, ensure_ascii=False)[:1000])
+        try:
+            text = data["candidates"][0]["content"]["parts"][0]["text"]
+        except Exception:
+            raise RuntimeError("لم يصل نص JSON من Gemini: " + json.dumps(data, ensure_ascii=False)[:1000])
     return parse_response(text)
 
 def create_excel_file(rows):
@@ -225,7 +227,6 @@ st.set_page_config(page_title=APP_TITLE, layout="wide")
 
 st.markdown("<h2 style='text-align: center; color: #ffd400;'>العراب - نظام التوصيل الذكي والمتقدم (الهاتف والويب)</h2>", unsafe_allow_html=True)
 
-# ربط المفتاح مباشرة بالجلسة وثباته التلقائي
 if "api_key" not in st.session_state or not st.session_state.api_key:
     st.session_state.api_key = DEFAULT_API_KEY
 
@@ -249,7 +250,7 @@ with st.sidebar:
                 else:
                     st.error(msg)
                     
-    st.info("تم تثبيت المفتاح وتفعيل كشف التكرار وحذف الطلبات تلقائياً.")
+    st.info("تم تثبيت المفتاح الجديد وتفعيل كشف التكرار وحذف الطلبات تلقائياً.")
 
 uploaded_files = st.file_uploader("📂 اختر صور الطلبات (يمكن اختيار عدة صور)", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True)
 
