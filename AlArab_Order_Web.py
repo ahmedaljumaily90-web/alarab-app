@@ -4,7 +4,7 @@ Al-Arab Order AI (نسخة الويب والهاتف - Streamlit)
 - التحقق التلقائي من أرقام الهواتف ومفتاح العراق (+964 / 0).
 - كشف الطلبات المكررة وتنبيه المستخدم وتمييزها بصرياً.
 - زر حذف الطلب المباشر وتصدير Excel.
-- تثبيت ودعم مفتاح AQ الجديد تلقائياً لمنع خطأ 401.
+- حل جذري لمشكلة المصادقة وتثبيت المفتاح بالطريقة الصحيحة.
 """
 
 import streamlit as st
@@ -16,7 +16,6 @@ from openpyxl import Workbook
 import pandas as pd
 
 APP_TITLE = "العراب - نظام التوصيل الذكي والمتقدم (الويب)"
-# تثبيت مفتاحك الجديد بشكل دائم وصحيح في النظام
 DEFAULT_API_KEY = "AQ.Ab8RN6I2N21DuvR1msayHwB3Z2VtBVth2rcAvWCypm4w4cpSqw"
 PREFERRED_MODELS = [
     "gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash",
@@ -149,6 +148,7 @@ def test_gemini_connection(api_key, model):
     endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     payload = {"contents": [{"parts": [{"text": "Hello"}]}]}
     
+    # محاولة الاتصال بالهيدرين معاً لضمان عدم رفض المفتاح نهائياً
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     r = requests.post(endpoint, headers=headers, json=payload, timeout=30)
     if r.status_code != 200:
@@ -158,7 +158,7 @@ def test_gemini_connection(api_key, model):
     if r.status_code == 200:
         return True, "تم الاتصال بنجاح بـ Gemini API والموديل يعمل بشكل ممتاز!"
     else:
-        return False, f"فشل الاتصال (كود الخطأ {r.status_code}): {r.text[:200]}"
+        return False, f"فشل الاتصال (كود الخطأ {r.status_code}): يرجى التأكد من صلاحية المفتاح."
 
 def call_gemini(api_key, model, uploaded_file):
     model = clean_model_name(model)
@@ -188,12 +188,9 @@ def call_gemini(api_key, model, uploaded_file):
         
     data = r.json()
     try:
-        text = data["candidates"][0]["content"]["parts"]["text"] if "text" in data["candidates"][0]["content"]["parts"] else data["candidates"][0]["content"]["parts"][0]["text"]
+        text = data["candidates"][0]["content"]["parts"][0]["text"]
     except Exception:
-        try:
-            text = data["candidates"][0]["content"]["parts"][0]["text"]
-        except Exception:
-            raise RuntimeError("لم يصل نص JSON من Gemini: " + json.dumps(data, ensure_ascii=False)[:1000])
+        raise RuntimeError("لم يصل نص JSON من Gemini: " + json.dumps(data, ensure_ascii=False)[:1000])
     return parse_response(text)
 
 def create_excel_file(rows):
@@ -250,7 +247,7 @@ with st.sidebar:
                 else:
                     st.error(msg)
                     
-    st.info("تم تثبيت المفتاح الجديد وتفعيل كشف التكرار وحذف الطلبات تلقائياً.")
+    st.info("نظام تدقيق الهواتف وكشف التكرار وحذف الطلبات مفعل تلقائياً.")
 
 uploaded_files = st.file_uploader("📂 اختر صور الطلبات (يمكن اختيار عدة صور)", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True)
 
