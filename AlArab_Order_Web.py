@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """
 Al-Arab Order AI (نسخة الويب والهاتف - Streamlit)
-- التحقق التلقائي من أرقام الهواتف ومفتاح العراق (+964 / 0).
-- كشف الطلبات المكررة وتنبيه المستخدم وتمييزها بصرياً.
+- التحقق التلقائي من أرقام الهواتف وإمكانية تعديلها بسهولة.
+- كشف الطلبات المكررة وتنبيه المستخدم.
+- زر إعادة معالجة صورة واحدة مفردة دون الجدول كله.
 - زر حذف الطلب المباشر وتصدير Excel.
-- حل مشكلة توقف المفتاح عبر إدارته بأمان.
 """
 
 import streamlit as st
@@ -146,17 +146,15 @@ def test_gemini_connection(api_key, model):
     model = clean_model_name(model)
     endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     payload = {"contents": [{"parts": [{"text": "Hello"}]}]}
-    
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     r = requests.post(endpoint, headers=headers, json=payload, timeout=30)
     if r.status_code != 200:
         headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
         r = requests.post(endpoint, headers=headers, json=payload, timeout=30)
-        
     if r.status_code == 200:
         return True, "تم الاتصال بنجاح بـ Gemini API والموديل يعمل بشكل ممتاز!"
     else:
-        return False, f"فشل الاتصال (كود الخطأ {r.status_code}): يرجى إدخال مفتاح صحيح."
+        return False, f"فشل الاتصال (كود الخطأ {r.status_code}): يرجى التأكد من المفتاح."
 
 def call_gemini(api_key, model, uploaded_file):
     model = clean_model_name(model)
@@ -174,16 +172,13 @@ def call_gemini(api_key, model, uploaded_file):
             "responseMimeType": "application/json"
         }
     }
-    
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     r = requests.post(endpoint, headers=headers, json=payload, timeout=120)
     if r.status_code != 200:
         headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
         r = requests.post(endpoint, headers=headers, json=payload, timeout=120)
-        
     if r.status_code != 200:
         raise RuntimeError(f"Gemini API {r.status_code}: {r.text[:1000]}")
-        
     data = r.json()
     try:
         text = data["candidates"][0]["content"]["parts"][0]["text"]
@@ -227,9 +222,7 @@ if "api_key" not in st.session_state:
 
 with st.sidebar:
     st.header("⚙ الإعدادات والذكاء الاصطناعي")
-    
-    # حقل إدخال المفتاح الآمن (لا يتسبب في إيقاف السيرفر عند تركه فارغاً أو تغييره)
-    user_api_key = st.text_input("مفتاح Gemini API", value=st.session_state.api_key, type="password", placeholder="الصق مفتاح الـ AQ هنا...")
+    user_api_key = st.text_input("مفتاح Gemini API", value=st.session_state.api_key, type="password", placeholder="الصق المفتاح هنا...")
     if user_api_key:
         st.session_state.api_key = user_api_key
         
@@ -237,7 +230,7 @@ with st.sidebar:
     
     if st.button("🔌 اختبار الاتصال بالذكاء الاصطناعي"):
         if not st.session_state.api_key:
-            st.error("الرجاء إدخال المفتاح في الشريط الجانبي أولاً.")
+            st.error("الرجاء إدخال المفتاح أولاً.")
         else:
             with st.spinner("جاري اختبار الاتصال..."):
                 success, msg = test_gemini_connection(st.session_state.api_key, selected_model)
@@ -246,12 +239,18 @@ with st.sidebar:
                 else:
                     st.error(msg)
                     
-    st.info("قم بإدخال مفتاحك مرة واحدة في الشريط الجانبي، والنظام جاهز لكشف التكرار وحذف الطلبات وتصدير الأكسل.")
+    st.info("قم برفع صور الطلبات من هاتفك بالأسفل.")
 
-uploaded_files = st.file_uploader("📂 اختر صور الطلبات (يمكن اختيار عدة صور)", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True)
+uploaded_files = st.file_uploader("📂 اختر صور الطلبات (يمكن اختيار عدة صور)", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True, key="uploader")
 
 if "extracted_rows" not in st.session_state:
     st.session_state.extracted_rows = []
+if "file_objects" not in st.session_state:
+    st.session_state.file_objects = {}
+
+if uploaded_files:
+    for f in uploaded_files:
+        st.session_state.file_objects[f.name] = f
 
 col_btn1, col_btn2 = st.columns([3, 1])
 with col_btn1:
@@ -261,11 +260,12 @@ with col_btn2:
 
 if clear_clicked:
     st.session_state.extracted_rows = []
+    st.session_state.file_objects = {}
     st.rerun()
 
 if start_clicked:
     if not st.session_state.api_key:
-        st.error("الرجاء إدخال مفتاح Gemini API في الشريط الجانبي أولاً.")
+        st.error("الرجاء إدخال مفتاح Gemini API في الشريط الجانبي.")
     elif not uploaded_files:
         st.warning("الرجاء رفع صورة واحدة على الأقل.")
     else:
@@ -293,7 +293,7 @@ if start_clicked:
         st.success("تمت المعالجة بنجاح!")
 
 if st.session_state.extracted_rows:
-    st.subheader("📊 جدول الطلبات المستخرجة (مع كشف التكرار)")
+    st.subheader("📊 جدول الطلبات المستخرجة (مع إمكانية تعديل الأرقام وإعادة المعالجة)")
     
     phone_counts = {}
     for r in st.session_state.extracted_rows:
@@ -313,37 +313,4 @@ if st.session_state.extracted_rows:
             is_duplicate = True
             
         with st.container(border=True):
-            cols = st.columns([2, 2, 2, 2, 1])
-            with cols[0]:
-                st.markdown(f"**الزبون:** {r.get('اسم الزبون', '')}")
-                st.markdown(f"**الهاتف:** `{r.get('رقم الهاتف الاساسي', '')}`")
-            with cols[1]:
-                st.markdown(f"**المحافظة:** {r.get('المحافظة', '')}")
-                st.markdown(f"**المنطقة:** {r.get('المنطقة', '')}")
-            with cols[2]:
-                st.markdown(f"**المنتج:** {r.get('نوع البضاعه', '')}")
-                st.markdown(f"**السعر:** {r.get('السعر مع التوصيل', '')}")
-            with cols[3]:
-                if is_duplicate:
-                    st.markdown(f"<span style='color: red; font-weight: bold;'>{status}</span>", unsafe_allow_html=True)
-                else:
-                    st.markdown(f"<span style='color: green;'>{status}</span>", unsafe_allow_html=True)
-                st.markdown(f"*(ملف: {r.get('_filename', '')})*")
-            with cols[4]:
-                if st.button("🗑 حذف", key=f"del_{idx}"):
-                    indices_to_delete.append(idx)
-
-    if indices_to_delete:
-        for i in sorted(indices_to_delete, reverse=True):
-            del st.session_state.extracted_rows[i]
-        st.rerun()
-
-    st.divider()
-    
-    excel_io = create_excel_file(st.session_state.extracted_rows)
-    st.download_button(
-        label="📥 تحميل ملف الأكسل بقالب الشركة (Excel)",
-        data=excel_io,
-        file_name="طلبات_العراب_قالب_الشركة.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+            cols =
